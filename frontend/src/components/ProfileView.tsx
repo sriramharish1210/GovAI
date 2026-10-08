@@ -1,0 +1,538 @@
+import React, { useState, useEffect } from 'react';
+import { api } from '../api';
+import type { StudentProfile, NotificationPreference } from '../../../shared/types';
+import { Save, Bell, CheckCircle, User, MapPin, GraduationCap, IndianRupee, Shield, Code, Sparkles } from 'lucide-react';
+import { useToast } from '../App';
+
+interface ProfileViewProps {
+  onProfileUpdated: () => void;
+}
+
+const STATES = [
+  'Maharashtra','Karnataka','Tamil Nadu','Delhi','Uttar Pradesh','West Bengal',
+  'Gujarat','Andhra Pradesh','Rajasthan','Kerala','Telangana','Madhya Pradesh',
+  'Bihar','Punjab','Haryana','All India'
+];
+
+const CATEGORIES = [
+  { value: 'General', label: 'General' },
+  { value: 'OBC', label: 'OBC (Other Backward Classes)' },
+  { value: 'SC', label: 'SC (Scheduled Caste)' },
+  { value: 'ST', label: 'ST (Scheduled Tribe)' },
+  { value: 'EWS', label: 'EWS (Economically Weaker Section)' },
+];
+
+function calcCompletion(name: string, profile: Partial<StudentProfile>): number {
+  const fields = ['state','district','educationLevel','institution','course','yearOfStudy','academicPercentage','familyIncome','category','gender','dob'];
+  const nameOk = name.trim().length > 0;
+  const filled = fields.filter((f) => {
+    const v = (profile as any)[f];
+    return v !== null && v !== undefined && v !== '' && (typeof v !== 'number' || v > 0);
+  }).length;
+  return Math.round(((filled + (nameOk ? 1 : 0)) / (fields.length + 1)) * 100);
+}
+
+const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }> = ({ checked, onChange, disabled }) => (
+  <label className="toggle">
+    <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} disabled={disabled} />
+    <span className="toggle-track" />
+  </label>
+);
+
+export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) => {
+  const { showToast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+
+  const [name, setName] = useState('');
+  const [internalEmail, setInternalEmail] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [profile, setProfile] = useState<Partial<StudentProfile>>({
+    state: '',
+    district: '',
+    educationLevel: '',
+    institution: '',
+    course: '',
+    yearOfStudy: null as any,
+    academicPercentage: null as any,
+    familyIncome: null as any,
+    category: 'General',
+    gender: 'Prefer not to say',
+    dob: '',
+    phone: '',
+    disabilityStatus: false,
+    disabilityPercentage: null as any,
+    minorityStatus: false,
+  });
+  const [prefs, setPrefs] = useState<Partial<NotificationPreference>>({
+    emailNotificationsEnabled: true,
+    reminder30Days: true,
+    reminder7Days: true,
+    reminder1Day: true,
+  });
+
+  useEffect(() => { loadProfile(); }, []);
+
+  const loadProfile = async () => {
+    setLoading(true);
+    try {
+      const res = await api.getProfile();
+      if (res.success && res.data) {
+        setName(res.data.name ?? '');
+        setInternalEmail(res.data.email ?? '');
+        setAvatarUrl(res.data.avatarUrl ?? '');
+        if (res.data.profile) {
+          const p = res.data.profile;
+          setProfile({
+            state: p.state ?? '',
+            district: p.district ?? '',
+            educationLevel: p.educationLevel ?? '',
+            institution: p.institution ?? '',
+            course: p.course ?? '',
+            yearOfStudy: p.yearOfStudy ?? (null as any),
+            academicPercentage: p.academicPercentage ?? (null as any),
+            familyIncome: p.familyIncome ?? (null as any),
+            category: p.category ?? 'General',
+            gender: p.gender ?? 'Prefer not to say',
+            phone: p.phone ?? '',
+            dob: p.dob ? new Date(p.dob).toISOString().split('T')[0] : '',
+            disabilityStatus: !!p.disabilityStatus,
+            disabilityPercentage: p.disabilityPercentage ?? (null as any),
+            minorityStatus: !!p.minorityStatus,
+          });
+        }
+        if (res.data.notificationPreference) setPrefs(res.data.notificationPreference);
+      }
+    } catch {
+      showToast('Could not load profile', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+
+    // Format clean payload preserving partial / null fields
+    const payload: any = {
+      name: name.trim() || undefined,
+      state: profile.state || null,
+      district: profile.district || null,
+      educationLevel: profile.educationLevel || null,
+      institution: profile.institution || null,
+      course: profile.course || null,
+      yearOfStudy: profile.yearOfStudy ? Number(profile.yearOfStudy) : null,
+      academicPercentage: profile.academicPercentage !== null && profile.academicPercentage !== undefined && profile.academicPercentage !== ('' as any)
+        ? Number(profile.academicPercentage)
+        : null,
+      familyIncome: profile.familyIncome !== null && profile.familyIncome !== undefined && profile.familyIncome !== ('' as any)
+        ? Number(profile.familyIncome)
+        : null,
+      category: profile.category || 'General',
+      gender: profile.gender || null,
+      phone: (profile as any).phone || null,
+      dob: profile.dob ? profile.dob : null,
+      disabilityStatus: !!profile.disabilityStatus,
+      disabilityPercentage: profile.disabilityStatus && profile.disabilityPercentage ? Number(profile.disabilityPercentage) : null,
+      minorityStatus: !!profile.minorityStatus,
+    };
+
+    try {
+      const [res, prefRes] = await Promise.all([
+        api.upsertProfile(payload),
+        api.updatePreferences(prefs),
+      ]);
+      if (res.success && prefRes.success) {
+        showToast('Profile saved successfully', 'success');
+        onProfileUpdated();
+      } else {
+        showToast(res.error?.message ?? 'Failed to save profile', 'error');
+      }
+    } catch (e: any) {
+      showToast(e.message ?? 'Error saving profile', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const upd = (key: keyof StudentProfile, val: any) => setProfile((p) => ({ ...p, [key]: val }));
+  const completion = calcCompletion(name, profile);
+
+  if (loading) {
+    return (
+      <div style={{ maxWidth: 800 }}>
+        <div className="skeleton" style={{ height: 100, borderRadius: 'var(--r-lg)', marginBottom: 16 }} />
+        <div className="skeleton" style={{ height: 400, borderRadius: 'var(--r-lg)' }} />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 840 }}>
+      <div className="page-header">
+        <h1 className="page-title">My Profile</h1>
+        <p className="page-subtitle">Your student profile matches you with central & state government welfare schemes</p>
+      </div>
+
+      {/* ── Primary Identity Card ── */}
+      <div className="card" style={{ marginBottom: 16, background: 'linear-gradient(135deg, var(--white) 0%, var(--surface) 100%)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="" style={{ width: 56, height: 56, borderRadius: '50%', border: '2px solid var(--border)' }} />
+            ) : (
+              <div style={{
+                width: 56, height: 56, borderRadius: '50%',
+                background: 'var(--blue-light)', color: 'var(--blue)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '1.4rem', fontWeight: 700, flexShrink: 0
+              }}>
+                {(name || 'S').charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-1)', margin: 0 }}>
+                  {name || 'Student Profile'}
+                </h2>
+                {/* Category displayed as a separate eligibility attribute badge */}
+                <span className="badge badge-blue" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '3px 8px' }}>
+                  {profile.category || 'General'}
+                </span>
+                {profile.state && (
+                  <span className="badge badge-gray" style={{ fontSize: '0.75rem' }}>
+                    {profile.state}
+                  </span>
+                )}
+              </div>
+              {/* Internal dev account indicator clearly labeled as development token */}
+              {internalEmail && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: '0.75rem', color: 'var(--text-3)' }}>
+                  <Code size={12} />
+                  <span>Dev Account ID: <code>{internalEmail}</code></span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-3)', fontWeight: 600 }}>Profile Strength</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: completion >= 80 ? 'var(--success)' : 'var(--blue)' }}>
+              {completion}%
+            </div>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="progress-bar-wrap" style={{ marginTop: 14 }}>
+          <div className="progress-bar-fill" style={{ width: `${completion}%`, background: completion >= 80 ? 'var(--success)' : undefined }} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: '0.75rem', color: 'var(--text-3)' }}>
+          <span>{completion === 100 ? 'All profile fields completed' : 'Partial profiles are fully supported'}</span>
+          <span>Save anytime to preserve matches</span>
+        </div>
+      </div>
+
+      <form onSubmit={handleSave}>
+
+        {/* ── Personal Identity (Name is Primary) ── */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 18 }}>
+            <div style={{ width: 28, height: 28, background: 'var(--blue-light)', borderRadius: 'var(--r-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <User size={15} color="var(--blue)" />
+            </div>
+            <div>
+              <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Primary Student Identity</span>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', margin: 0 }}>Your name identifies you on applications and official records</p>
+            </div>
+          </div>
+          <div className="profile-grid">
+            <div className="form-group">
+              <label className="form-label" htmlFor="name">Student Full Name</label>
+              <input
+                id="name"
+                className="form-input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Enter your full name"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="phone">Contact Phone Number</label>
+              <input
+                id="phone"
+                type="tel"
+                className="form-input"
+                value={(profile as any).phone ?? ''}
+                onChange={(e) => upd('phone' as any, e.target.value)}
+                placeholder="10-digit mobile number"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="gender">Gender</label>
+              <select id="gender" className="form-select" value={profile.gender ?? 'Prefer not to say'} onChange={(e) => upd('gender', e.target.value)}>
+                <option value="Prefer not to say">Prefer not to say</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Transgender">Transgender</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="dob">Date of Birth</label>
+              <input
+                id="dob"
+                type="date"
+                className="form-input"
+                value={profile.dob as string ?? ''}
+                onChange={(e) => upd('dob', e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ── Social Category & Financial (Category is Eligibility Attribute) ── */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 18 }}>
+            <div style={{ width: 28, height: 28, background: '#fef3e2', borderRadius: 'var(--r-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <IndianRupee size={15} color="var(--warning)" />
+            </div>
+            <div>
+              <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Social Category & Financial Information</span>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', margin: 0 }}>Category is evaluated as eligibility criteria for reservation-based benefits</p>
+            </div>
+          </div>
+          <div className="profile-grid">
+            <div className="form-group">
+              <label className="form-label" htmlFor="category">Social Category (Caste / Reservation)</label>
+              <select id="category" className="form-select" value={profile.category ?? 'General'} onChange={(e) => upd('category', e.target.value)}>
+                {CATEGORIES.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
+              <span className="form-hint">Used for category-specific scholarships (SC, ST, OBC, EWS)</span>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="income">Annual Family Income (₹ INR)</label>
+              <input
+                id="income"
+                type="number"
+                className="form-input"
+                value={profile.familyIncome !== null && profile.familyIncome !== undefined ? profile.familyIncome : ''}
+                onChange={(e) => upd('familyIncome', e.target.value === '' ? null : Number(e.target.value))}
+                placeholder="e.g. 250000"
+              />
+              <span className="form-hint">Leave blank if pending income certificate</span>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Domicile Location ── */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 18 }}>
+            <div style={{ width: 28, height: 28, background: '#e6f4ea', borderRadius: 'var(--r-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <MapPin size={15} color="var(--success)" />
+            </div>
+            <div>
+              <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>State & Domicile</span>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', margin: 0 }}>Enables state-specific welfare schemes</p>
+            </div>
+          </div>
+          <div className="profile-grid">
+            <div className="form-group">
+              <label className="form-label" htmlFor="state">State of Domicile</label>
+              <select id="state" className="form-select" value={profile.state ?? ''} onChange={(e) => upd('state', e.target.value)}>
+                <option value="">Select State…</option>
+                {STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="district">District</label>
+              <input
+                id="district"
+                className="form-input"
+                value={profile.district ?? ''}
+                onChange={(e) => upd('district', e.target.value)}
+                placeholder="e.g. Pune, Jaipur, etc."
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ── Education ── */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 18 }}>
+            <div style={{ width: 28, height: 28, background: '#f3e8ff', borderRadius: 'var(--r-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <GraduationCap size={15} color="#7c3aed" />
+            </div>
+            <div>
+              <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Educational Background</span>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', margin: 0 }}>Matched against academic stage & merit cutoffs</p>
+            </div>
+          </div>
+          <div className="profile-grid">
+            <div className="form-group">
+              <label className="form-label" htmlFor="eduLevel">Education Level</label>
+              <select id="eduLevel" className="form-select" value={profile.educationLevel ?? ''} onChange={(e) => upd('educationLevel', e.target.value)}>
+                <option value="">Select Level…</option>
+                <option value="10th">10th Grade / Secondary</option>
+                <option value="12th">12th Grade / Senior Secondary</option>
+                <option value="UG">Undergraduate (UG / Bachelor's)</option>
+                <option value="PG">Postgraduate (PG / Master's)</option>
+                <option value="Diploma">Diploma / Polytechnic</option>
+                <option value="PhD">PhD / Doctorate / Research</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="institution">College / School Name</label>
+              <input
+                id="institution"
+                className="form-input"
+                value={profile.institution ?? ''}
+                onChange={(e) => upd('institution', e.target.value)}
+                placeholder="e.g. Government Engineering College"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="course">Course / Stream</label>
+              <input
+                id="course"
+                className="form-input"
+                value={profile.course ?? ''}
+                onChange={(e) => upd('course', e.target.value)}
+                placeholder="e.g. B.Tech Computer Science, B.Sc, etc."
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="year">Year of Study</label>
+              <input
+                id="year"
+                type="number"
+                min={1}
+                max={6}
+                className="form-input"
+                value={profile.yearOfStudy ?? ''}
+                onChange={(e) => upd('yearOfStudy', e.target.value === '' ? null : Number(e.target.value))}
+                placeholder="1 to 5"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="marks">Academic Percentage (%)</label>
+              <input
+                id="marks"
+                type="number"
+                step="0.1"
+                min={0}
+                max={100}
+                className="form-input"
+                value={profile.academicPercentage !== null && profile.academicPercentage !== undefined ? profile.academicPercentage : ''}
+                onChange={(e) => upd('academicPercentage', e.target.value === '' ? null : Number(e.target.value))}
+                placeholder="e.g. 84.5"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ── Special Attributes ── */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 18 }}>
+            <div style={{ width: 28, height: 28, background: 'var(--surface-2)', borderRadius: 'var(--r-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Shield size={15} color="var(--text-3)" />
+            </div>
+            <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Special Welfare Attributes</span>
+          </div>
+
+          <div className="toggle-row">
+            <div className="toggle-info">
+              <div className="toggle-title">Person with Disability (PwD)</div>
+              <div className="toggle-desc">Enables matching with disability assistance & stipend schemes</div>
+            </div>
+            <Toggle checked={!!profile.disabilityStatus} onChange={(v) => upd('disabilityStatus', v)} />
+          </div>
+
+          {profile.disabilityStatus && (
+            <div className="form-group" style={{ marginTop: 12, paddingLeft: 0 }}>
+              <label className="form-label" htmlFor="disabilityPct">Disability Percentage (%)</label>
+              <input
+                id="disabilityPct"
+                type="number"
+                min={0}
+                max={100}
+                className="form-input"
+                style={{ maxWidth: 200 }}
+                value={profile.disabilityPercentage ?? ''}
+                onChange={(e) => upd('disabilityPercentage', e.target.value === '' ? null : Number(e.target.value))}
+                placeholder="e.g. 40"
+              />
+            </div>
+          )}
+
+          <div className="toggle-row">
+            <div className="toggle-info">
+              <div className="toggle-title">Minority Community Member</div>
+              <div className="toggle-desc">Unlocks minority-specific educational aid & schemes</div>
+            </div>
+            <Toggle checked={!!profile.minorityStatus} onChange={(v) => upd('minorityStatus', v)} />
+          </div>
+        </div>
+
+        {/* ── Notifications ── */}
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 18 }}>
+            <div style={{ width: 28, height: 28, background: '#fce8e6', borderRadius: 'var(--r-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Bell size={15} color="var(--danger)" />
+            </div>
+            <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Deadline Reminders</span>
+          </div>
+
+          <div className="toggle-row">
+            <div className="toggle-info">
+              <div className="toggle-title">Email Deadline Notifications</div>
+              <div className="toggle-desc">Receive email alerts before scheme application deadlines close</div>
+            </div>
+            <Toggle checked={!!prefs.emailNotificationsEnabled} onChange={(v) => setPrefs((p) => ({ ...p, emailNotificationsEnabled: v }))} />
+          </div>
+
+          <div style={{ marginLeft: 16, paddingLeft: 12, borderLeft: '2px solid var(--border)', opacity: prefs.emailNotificationsEnabled ? 1 : 0.4, pointerEvents: prefs.emailNotificationsEnabled ? 'auto' : 'none' }}>
+            <div className="toggle-row">
+              <div className="toggle-info">
+                <div className="toggle-title">30-day reminder</div>
+                <div className="toggle-desc">Alert 30 days before deadline</div>
+              </div>
+              <Toggle checked={!!prefs.reminder30Days} onChange={(v) => setPrefs((p) => ({ ...p, reminder30Days: v }))} disabled={!prefs.emailNotificationsEnabled} />
+            </div>
+            <div className="toggle-row">
+              <div className="toggle-info">
+                <div className="toggle-title">7-day reminder</div>
+                <div className="toggle-desc">Alert 1 week before deadline</div>
+              </div>
+              <Toggle checked={!!prefs.reminder7Days} onChange={(v) => setPrefs((p) => ({ ...p, reminder7Days: v }))} disabled={!prefs.emailNotificationsEnabled} />
+            </div>
+            <div className="toggle-row">
+              <div className="toggle-info">
+                <div className="toggle-title">1-day reminder</div>
+                <div className="toggle-desc">Final alert the day before deadline</div>
+              </div>
+              <Toggle checked={!!prefs.reminder1Day} onChange={(v) => setPrefs((p) => ({ ...p, reminder1Day: v }))} disabled={!prefs.emailNotificationsEnabled} />
+            </div>
+          </div>
+        </div>
+
+        {/* Save button & summary */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ fontSize: '0.82rem', color: 'var(--text-3)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Sparkles size={14} color="var(--blue)" />
+            <span>Profile updates immediately refresh personalized scheme recommendations</span>
+          </div>
+          <button type="submit" className="btn btn-primary" disabled={saving} style={{ minWidth: 160 }}>
+            {saving ? (
+              <><div className="spinner" />Saving…</>
+            ) : (
+              <><Save size={16} /> Save Profile</>
+            )}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};

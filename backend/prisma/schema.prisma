@@ -1,0 +1,196 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                     String                  @id @default(uuid())
+  email                  String                  @unique
+  name                   String
+  avatarUrl              String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  profile                StudentProfile?
+  notificationPreference NotificationPreference?
+  bookmarks              Bookmark[]
+  applications          Application[]
+  reminders             Reminder[]
+  chatSessions          ChatSession[]
+  generatedReports      GeneratedReport[]
+}
+
+model NotificationPreference {
+  id                        String   @id @default(uuid())
+  userId                    String   @unique
+  user                      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailNotificationsEnabled Boolean  @default(true)
+  reminder30Days            Boolean  @default(true)
+  reminder7Days             Boolean  @default(true)
+  reminder1Day              Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
+
+model StudentProfile {
+  id                   String    @id @default(uuid())
+  userId               String    @unique
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phone                String?
+  state                String?
+  district             String?
+  educationLevel       String?   // e.g., "10th", "12th", "UG", "PG", "Diploma", "PhD"
+  institution          String?
+  course               String?
+  yearOfStudy          Int?
+  academicPercentage   Float?    // Percentage, e.g., 82.5
+  familyIncome         Float?    // Annual family income in INR
+  category             String?   // e.g., "General", "OBC", "SC", "ST", "EWS"
+  gender               String?   // e.g., "Male", "Female", "Transgender", "Prefer not to say"
+  dob                  DateTime? // Date of birth for age verification
+  disabilityStatus     Boolean   @default(false)
+  disabilityPercentage Float?
+  minorityStatus       Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+model Scheme {
+  id                     String             @id // Unique slug or manual string ID
+  name                   String
+  shortDescription       String
+  detailedDescription    String
+  department             String
+  centralOrState         String             // "CENTRAL" | "STATE"
+  state                  String?            // If STATE, name of the state (e.g., "Maharashtra")
+  officialSourceUrl      String
+  officialApplicationUrl String?            // Can be null if not available
+  sourceName             String             // e.g. "National Scholarship Portal"
+  startDate              DateTime?
+  deadline               DateTime?
+  deadlineType           String             // "FIXED" | "RECURRING" | "ROLLING" | "UNKNOWN"
+  recurringCycle         String?            // Text description of recurring cycle (e.g. "Annual - Oct-Nov")
+  lastVerifiedDate       DateTime           @default(now())
+  verificationStatus     String             // "VERIFIED" | "STALE" | "UNVERIFIED"
+  sourceMetadata         String?            // Any details about source tracking
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  
+  benefits               SchemeBenefit[]
+  documents              SchemeDocument[]
+  eligibility            SchemeEligibility?
+  bookmarks              Bookmark[]
+  applications          Application[]
+  reminders              Reminder[]
+  tags                   Tag[]              @relation("SchemeTags")
+}
+
+model SchemeBenefit {
+  id          String   @id @default(uuid())
+  schemeId    String
+  scheme      Scheme   @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  type        String   // "MONETARY" | "SUBSIDY" | "STIPEND" | "TUITION_WAVIER" | "OTHER"
+  amount      Float?
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SchemeDocument {
+  id          String   @id @default(uuid())
+  schemeId    String
+  scheme      Scheme   @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  isRequired  Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SchemeEligibility {
+  id                   String   @id @default(uuid())
+  schemeId             String   @unique
+  scheme               Scheme   @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  rulesJson            String   // JSON representing complex condition tree: { operator: 'AND', conditions: [...], groups: [...] }
+  readableRequirements String   // Markdown description of eligibility requirements
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model Tag {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  schemes   Scheme[] @relation("SchemeTags")
+  createdAt DateTime @default(now())
+}
+
+model Bookmark {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schemeId  String
+  scheme    Scheme   @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, schemeId])
+}
+
+model Application {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schemeId  String
+  scheme    Scheme    @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  status    String    // "NOT_APPLIED" | "PLANNING_TO_APPLY" | "APPLIED" | "COMPLETED"
+  notes     String?
+  appliedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([userId, schemeId])
+}
+
+model Reminder {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schemeId    String
+  scheme      Scheme    @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  daysBefore  Int       // 30 | 7 | 1
+  triggerDate DateTime  // Date to fire notification
+  isSent      Boolean   @default(false)
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, schemeId, daysBefore])
+}
+
+model ChatSession {
+  id        String        @id @default(uuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  messages  ChatMessage[]
+}
+
+model ChatMessage {
+  id        String      @id @default(uuid())
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      String      // "USER" | "ASSISTANT"
+  content   String
+  createdAt DateTime    @default(now())
+}
+
+model GeneratedReport {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reportData String   // JSON dump of matching schemes & profile snapshot
+  createdAt  DateTime @default(now())
+}
