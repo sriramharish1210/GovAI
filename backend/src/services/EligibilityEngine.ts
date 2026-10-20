@@ -43,7 +43,11 @@ export function evaluateCondition(profile: StudentProfile, condition: RuleCondit
     } else {
       profileValue = calculateAge(profile.dob);
     }
-  } else if (profileValue === null || profileValue === undefined) {
+  } else if (
+    profileValue === null || 
+    profileValue === undefined || 
+    (typeof profileValue === 'string' && profileValue.trim() === '')
+  ) {
     isMissingInfo = true;
   }
 

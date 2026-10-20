@@ -906,6 +906,223 @@ async function runTestSuite() {
     recordTest(23, 'Partial Profile Safeguards', 'EligibilityEngine', 'Partial profile', 'NEEDS_VERIFICATION & NOT_ELIGIBLE appropriately', err.message, false);
   }
 
+  // --- TEST 24: PM YASASVI Category Restriction Regression Test ---
+  try {
+    const yasasviScheme = await prisma.scheme.findUnique({
+      where: { id: 'central-post-matric-obc' },
+      include: { eligibility: true }
+    });
+
+    if (!yasasviScheme || !yasasviScheme.eligibility) {
+      throw new Error('central-post-matric-obc scheme or its eligibility not found in DB');
+    }
+
+    // Profile A: General Category student (The exact user bug report profile)
+    const generalStudent: any = {
+      state: 'Maharashtra',
+      district: 'Thane',
+      educationLevel: 'UG',
+      familyIncome: 150000,
+      category: 'General',
+      dob: '2004-05-15',
+      disabilityStatus: false,
+      minorityStatus: false
+    };
+
+    const evalGeneral = evaluateSchemeEligibility(generalStudent, yasasviScheme as any);
+    const generalCategoryRule = evalGeneral.rulesEvaluated.find(r => r.field === 'category');
+    const generalPassed = evalGeneral.eligibilityStatus === 'NOT_ELIGIBLE' &&
+                          evalGeneral.matchScore <= 49 &&
+                          generalCategoryRule !== undefined &&
+                          generalCategoryRule.passed === false;
+
+    // Profile B: OBC Category student (Legitimate candidate)
+    const obcStudent: any = {
+      state: 'Maharashtra',
+      district: 'Thane',
+      educationLevel: 'UG',
+      familyIncome: 150000,
+      category: 'OBC',
+      dob: '2004-05-15',
+      disabilityStatus: false,
+      minorityStatus: false
+    };
+
+    const evalObc = evaluateSchemeEligibility(obcStudent, yasasviScheme as any);
+    const obcCategoryRule = evalObc.rulesEvaluated.find(r => r.field === 'category');
+    const obcPassed = evalObc.eligibilityStatus === 'ELIGIBLE' &&
+                      evalObc.matchScore === 100 &&
+                      obcCategoryRule !== undefined &&
+                      obcCategoryRule.passed === true;
+
+    // Profile C: EWS Category student
+    const ewsStudent: any = {
+      ...generalStudent,
+      category: 'EWS'
+    };
+    const evalEws = evaluateSchemeEligibility(ewsStudent, yasasviScheme as any);
+    const ewsPassed = evalEws.eligibilityStatus === 'NOT_ELIGIBLE';
+
+    const test24Passed = generalPassed && obcPassed && ewsPassed;
+    recordTest(
+      24,
+      'PM YASASVI Category Restriction Regression',
+      'evaluateSchemeEligibility(central-post-matric-obc)',
+      'General & EWS vs OBC students',
+      'General/EWS => NOT_ELIGIBLE (score <= 49, category passed: false); OBC => ELIGIBLE (100% match)',
+      `General: status=${evalGeneral.eligibilityStatus}, score=${evalGeneral.matchScore}, catPassed=${generalCategoryRule?.passed}; OBC: status=${evalObc.eligibilityStatus}, score=${evalObc.matchScore}; EWS: status=${evalEws.eligibilityStatus}`,
+      test24Passed
+    );
+  } catch (err: any) {
+    recordTest(24, 'PM YASASVI Category Restriction Regression', 'evaluateSchemeEligibility', 'General/OBC', 'Category enforcement', err.message, false);
+  }
+
+  // --- TEST 25: Legitimate General-Inclusive Schemes Regression Test ---
+  try {
+    const generalStudent: any = {
+      state: 'Maharashtra',
+      district: 'Thane',
+      educationLevel: 'UG',
+      familyIncome: 150000,
+      academicPercentage: 85,
+      category: 'General',
+      dob: '2004-05-15',
+      disabilityStatus: false,
+      minorityStatus: false
+    };
+
+    // Schemes open to General:
+    // 1. Central Sector Scholarship (merit >= 80, income <= 450k, UG/PG)
+    const centralSectorScheme = await prisma.scheme.findUnique({
+      where: { id: 'central-sector-scholarship' },
+      include: { eligibility: true }
+    });
+    // 2. Maharashtra Rajarshi Chhatrapati Shahu Maharaj EBC (income <= 800k, academic >= 50, UG, state Maharashtra)
+    const maharashtraEbcScheme = await prisma.scheme.findUnique({
+      where: { id: 'maharashtra-ebc' },
+      include: { eligibility: true }
+    });
+    // 3. Central CSIS Interest Subsidy (income <= 450k, UG)
+    const csisScheme = await prisma.scheme.findUnique({
+      where: { id: 'central-csis-interest-subsidy' },
+      include: { eligibility: true }
+    });
+
+    const evalCentralSector = centralSectorScheme ? evaluateSchemeEligibility(generalStudent, centralSectorScheme as any) : null;
+    const evalMahaEbc = maharashtraEbcScheme ? evaluateSchemeEligibility(generalStudent, maharashtraEbcScheme as any) : null;
+    const evalCsis = csisScheme ? evaluateSchemeEligibility(generalStudent, csisScheme as any) : null;
+
+    const test25Passed = evalCentralSector?.eligibilityStatus === 'ELIGIBLE' &&
+                         evalMahaEbc?.eligibilityStatus === 'ELIGIBLE' &&
+                         evalCsis?.eligibilityStatus === 'ELIGIBLE';
+
+    recordTest(
+      25,
+      'Legitimate General-Inclusive Schemes',
+      'evaluateSchemeEligibility()',
+      'General student with valid merit, income, state for general-inclusive schemes',
+      'General student correctly marked ELIGIBLE for central-sector, maharashtra-ebc, and csis',
+      `CentralSector=${evalCentralSector?.eligibilityStatus}, MahaEBC=${evalMahaEbc?.eligibilityStatus}, CSIS=${evalCsis?.eligibilityStatus}`,
+      test25Passed
+    );
+  } catch (err: any) {
+    recordTest(25, 'Legitimate General-Inclusive Schemes', 'evaluateSchemeEligibility', 'General student', 'All 3 schemes ELIGIBLE', err.message, false);
+  }
+
+  // --- TEST 26: Income Boundary Verification ---
+  try {
+    const yasasviScheme = await prisma.scheme.findUnique({
+      where: { id: 'central-post-matric-obc' },
+      include: { eligibility: true }
+    });
+
+    if (!yasasviScheme) throw new Error('Scheme not found');
+
+    // Exactly at boundary: 250,000 (<= 250000 should pass)
+    const obcBoundaryPass: any = {
+      state: 'Maharashtra',
+      educationLevel: 'UG',
+      category: 'OBC',
+      familyIncome: 250000,
+      dob: '2004-05-15'
+    };
+    const evalPass = evaluateSchemeEligibility(obcBoundaryPass, yasasviScheme as any);
+
+    // Just above boundary: 250,001 (<= 250000 should fail)
+    const obcBoundaryFail: any = {
+      state: 'Maharashtra',
+      educationLevel: 'UG',
+      category: 'OBC',
+      familyIncome: 250001,
+      dob: '2004-05-15'
+    };
+    const evalFail = evaluateSchemeEligibility(obcBoundaryFail, yasasviScheme as any);
+
+    const test26Passed = evalPass.eligibilityStatus === 'ELIGIBLE' &&
+                         evalFail.eligibilityStatus === 'NOT_ELIGIBLE' &&
+                         evalFail.matchScore <= 49;
+
+    recordTest(
+      26,
+      'Income Boundary Verification',
+      'evaluateSchemeEligibility(central-post-matric-obc)',
+      'Income 250000 vs 250001',
+      '250,000 => ELIGIBLE; 250,001 => NOT_ELIGIBLE',
+      `At 250k: ${evalPass.eligibilityStatus} (score=${evalPass.matchScore}); At 250,001: ${evalFail.eligibilityStatus} (score=${evalFail.matchScore})`,
+      test26Passed
+    );
+  } catch (err: any) {
+    recordTest(26, 'Income Boundary Verification', 'evaluateSchemeEligibility', 'Income boundary', 'Pass at 250k, fail at 250001', err.message, false);
+  }
+
+  // --- TEST 27: Missing Profile Information Safeguards ---
+  try {
+    const yasasviScheme = await prisma.scheme.findUnique({
+      where: { id: 'central-post-matric-obc' },
+      include: { eligibility: true }
+    });
+    if (!yasasviScheme) throw new Error('Scheme not found');
+
+    // Case 1: Category unselected (empty string or null) in partial profile -> NEEDS_VERIFICATION (not ELIGIBLE)
+    const profileMissingCategory: any = {
+      state: 'Maharashtra',
+      educationLevel: 'UG',
+      familyIncome: 150000,
+      category: '',
+      dob: '2004-05-15'
+    };
+    const evalMissingCat = evaluateSchemeEligibility(profileMissingCategory, yasasviScheme as any);
+    const catResult = evalMissingCat.rulesEvaluated.find(r => r.field === 'category');
+
+    const case1Ok = evalMissingCat.eligibilityStatus === 'NEEDS_VERIFICATION' &&
+                    (catResult as any)?.isMissingInfo === true &&
+                    catResult?.passed === false;
+
+    // Case 2: Hard failure on income (500k > 250k) AND missing educationLevel -> NOT_ELIGIBLE (hard failure takes precedence)
+    const profileHardFailAndMissing: any = {
+      state: 'Maharashtra',
+      educationLevel: null,
+      familyIncome: 500000,
+      category: 'OBC',
+      dob: '2004-05-15'
+    };
+    const evalHardAndMissing = evaluateSchemeEligibility(profileHardFailAndMissing, yasasviScheme as any);
+    const case2Ok = evalHardAndMissing.eligibilityStatus === 'NOT_ELIGIBLE';
+
+    const test27Passed = case1Ok && case2Ok;
+    recordTest(
+      27,
+      'Missing Profile Info & Mandatory Safeguards',
+      'evaluateSchemeEligibility(central-post-matric-obc)',
+      'Missing category & mixed hard failure/missing info',
+      'Missing category => NEEDS_VERIFICATION; Hard income failure with missing education => NOT_ELIGIBLE',
+      `Missing category: status=${evalMissingCat.eligibilityStatus}, isMissing=${(catResult as any)?.isMissingInfo}; Hard fail+missing: status=${evalHardAndMissing.eligibilityStatus}`,
+      test27Passed
+    );
+  } catch (err: any) {
+    recordTest(27, 'Missing Profile Info & Mandatory Safeguards', 'EligibilityEngine', 'Missing info', 'Correct status assignment', err.message, false);
+  }
+
   // --- FINAL SUMMARY REPORT ---
   console.log('\n====================================================');
   console.log('FINAL TEST RESULTS SUMMARY');

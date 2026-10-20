@@ -15,11 +15,11 @@ const STATES = [
 ];
 
 const CATEGORIES = [
-  { value: 'General', label: 'General' },
-  { value: 'OBC', label: 'OBC (Other Backward Classes)' },
-  { value: 'SC', label: 'SC (Scheduled Caste)' },
-  { value: 'ST', label: 'ST (Scheduled Tribe)' },
-  { value: 'EWS', label: 'EWS (Economically Weaker Section)' },
+  { value: 'General', label: 'General', desc: 'Open / Unreserved' },
+  { value: 'OBC', label: 'OBC', desc: 'Other Backward Classes' },
+  { value: 'SC', label: 'SC', desc: 'Scheduled Caste' },
+  { value: 'ST', label: 'ST', desc: 'Scheduled Tribe' },
+  { value: 'EWS', label: 'EWS', desc: 'Economically Weaker Section' },
 ];
 
 function calcCompletion(name: string, profile: Partial<StudentProfile>): number {
@@ -56,7 +56,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
     yearOfStudy: null as any,
     academicPercentage: null as any,
     familyIncome: null as any,
-    category: 'General',
+    category: '',
     gender: 'Prefer not to say',
     dob: '',
     phone: '',
@@ -92,7 +92,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
             yearOfStudy: p.yearOfStudy ?? (null as any),
             academicPercentage: p.academicPercentage ?? (null as any),
             familyIncome: p.familyIncome ?? (null as any),
-            category: p.category ?? 'General',
+            category: p.category ?? '',
             gender: p.gender ?? 'Prefer not to say',
             phone: p.phone ?? '',
             dob: p.dob ? new Date(p.dob).toISOString().split('T')[0] : '',
@@ -129,7 +129,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
       familyIncome: profile.familyIncome !== null && profile.familyIncome !== undefined && profile.familyIncome !== ('' as any)
         ? Number(profile.familyIncome)
         : null,
-      category: profile.category || 'General',
+      category: profile.category ? profile.category : null,
       gender: profile.gender || null,
       phone: (profile as any).phone || null,
       dob: profile.dob ? profile.dob : null,
@@ -196,23 +196,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
                 <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-1)', margin: 0 }}>
                   {name || 'Student Profile'}
                 </h2>
-                {/* Category displayed as a separate eligibility attribute badge */}
-                <span className="badge badge-blue" style={{ fontSize: '0.75rem', fontWeight: 700, padding: '3px 8px' }}>
-                  {profile.category || 'General'}
+                <span className="badge badge-blue" style={{ fontSize: '0.75rem', fontWeight: 600, padding: '3px 8px' }}>
+                  Student
                 </span>
+                {profile.category && (
+                  <span className="badge badge-blue" style={{ fontSize: '0.75rem', fontWeight: 600, padding: '3px 8px' }}>
+                    {profile.category}
+                  </span>
+                )}
                 {profile.state && (
                   <span className="badge badge-gray" style={{ fontSize: '0.75rem' }}>
                     {profile.state}
                   </span>
                 )}
               </div>
-              {/* Internal dev account indicator clearly labeled as development token */}
-              {internalEmail && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: '0.75rem', color: 'var(--text-3)' }}>
-                  <Code size={12} />
-                  <span>Dev Account ID: <code>{internalEmail}</code></span>
-                </div>
-              )}
             </div>
           </div>
 
@@ -244,7 +241,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
             </div>
             <div>
               <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Primary Student Identity</span>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', margin: 0 }}>Your name identifies you on applications and official records</p>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', margin: 0 }}>Your personal identity information used across application records</p>
             </div>
           </div>
           <div className="profile-grid">
@@ -291,26 +288,83 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
           </div>
         </div>
 
-        {/* ── Social Category & Financial (Category is Eligibility Attribute) ── */}
+        {/* ── Social Category & Affirmative Action (Scheme Eligibility Criteria) ── */}
         <div className="card" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 18 }}>
             <div style={{ width: 28, height: 28, background: '#fef3e2', borderRadius: 'var(--r-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <IndianRupee size={15} color="var(--warning)" />
             </div>
             <div>
-              <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Social Category & Financial Information</span>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', margin: 0 }}>Category is evaluated as eligibility criteria for reservation-based benefits</p>
+              <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Social Category & Affirmative Action (Scheme Eligibility)</span>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', margin: 0 }}>Category is evaluated strictly as eligibility criteria for quota and reservation benefits, separate from user identity</p>
             </div>
           </div>
           <div className="profile-grid">
-            <div className="form-group">
-              <label className="form-label" htmlFor="category">Social Category (Caste / Reservation)</label>
-              <select id="category" className="form-select" value={profile.category ?? 'General'} onChange={(e) => upd('category', e.target.value)}>
-                {CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </select>
-              <span className="form-hint">Used for category-specific scholarships (SC, ST, OBC, EWS)</span>
+            <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <label className="form-label" style={{ marginBottom: 0 }}>Social Category (Reservation / Quota Criteria)</label>
+                {profile.category && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ fontSize: '0.72rem', padding: '2px 8px', height: 'auto', color: 'var(--text-3)' }}
+                    onClick={() => upd('category', '')}
+                    title="Clear selected category for partial profile"
+                  >
+                    Clear selection
+                  </button>
+                )}
+              </div>
+              <div
+                role="radiogroup"
+                aria-label="Social Category"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                  gap: 10,
+                  marginTop: 4,
+                }}
+              >
+                {CATEGORIES.map((c) => {
+                  const isSelected = profile.category === c.value;
+                  return (
+                    <button
+                      key={c.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      onClick={() => upd('category', isSelected ? '' : c.value)}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-start',
+                        padding: '10px 12px',
+                        borderRadius: 'var(--r-md)',
+                        border: isSelected ? '2px solid var(--blue)' : '1px solid var(--border)',
+                        background: isSelected ? '#e8f0fe' : 'var(--surface)',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 2 }}>
+                        <span style={{ fontWeight: isSelected ? 800 : 600, fontSize: '0.88rem', color: isSelected ? 'var(--blue)' : 'var(--text-1)' }}>
+                          {c.label}
+                        </span>
+                        {isSelected && (
+                          <CheckCircle size={14} color="var(--blue)" style={{ flexShrink: 0 }} />
+                        )}
+                      </div>
+                      <span style={{ fontSize: '0.72rem', color: isSelected ? 'var(--blue)' : 'var(--text-3)' }}>
+                        {c.desc}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="form-hint" style={{ marginTop: 6, display: 'block' }}>
+                Used for category-specific scholarships (SC, ST, OBC, EWS). Evaluated strictly as eligibility criteria. Click a category to select or deselect.
+              </span>
             </div>
             <div className="form-group">
               <label className="form-label" htmlFor="income">Annual Family Income (₹ INR)</label>

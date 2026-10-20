@@ -806,6 +806,10 @@ body {
   color: var(--danger);
 }
 
+.chat-mobile-toggle-btn {
+  display: none;
+}
+
 .chat-rename-box {
   display: flex;
   align-items: center;
@@ -1638,6 +1642,7 @@ body {
   .profile-grid { grid-template-columns: 1fr; }
   .chat-layout { grid-template-columns: 1fr; height: auto; }
   .chat-sidebar { display: none; }
+  .chat-mobile-toggle-btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; font-size: 0.78rem; flex-shrink: 0; }
   .chat-main { height: calc(100vh - 220px); min-height: 400px; }
   .kanban-grid { grid-template-columns: 1fr; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }

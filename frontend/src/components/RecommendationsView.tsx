@@ -22,8 +22,15 @@ export const RecommendationsView: React.FC<RecommendationsViewProps> = ({ onSele
   const [recs, setRecs]               = useState<RecommendationResult[]>([]);
   const [statusFilter, setStatusFilter] = useState('');
   const [includeAi, setIncludeAi]     = useState(false);
-  const [expandedId, setExpandedId]   = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
   const [aiLoading, setAiLoading]     = useState<Record<string, boolean>>({});
+
+  const toggleExpanded = (schemeId: string) => {
+    setExpandedIds((prev) => ({
+      ...prev,
+      [schemeId]: !prev[schemeId],
+    }));
+  };
 
   useEffect(() => { fetchRecs(); }, [statusFilter]);
   useEffect(() => { if (includeAi) fetchRecs(); }, [includeAi]);
@@ -167,7 +174,7 @@ export const RecommendationsView: React.FC<RecommendationsViewProps> = ({ onSele
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {recs.map((rec) => {
             const { scheme, matchScore, eligibilityStatus, rulesEvaluated, aiExplanation } = rec;
-            const isExpanded = expandedId === scheme.id;
+            const isExpanded = !!expandedIds[scheme.id];
             const borderColor = eligibilityStatus === 'ELIGIBLE' ? 'var(--success)'
               : eligibilityStatus === 'NEEDS_VERIFICATION' ? 'var(--blue)'
               : 'var(--danger)';
@@ -233,7 +240,7 @@ export const RecommendationsView: React.FC<RecommendationsViewProps> = ({ onSele
                     <button
                       className="btn btn-ghost btn-sm"
                       style={{ width: '100%', justifyContent: 'space-between', fontSize: '0.8rem' }}
-                      onClick={() => setExpandedId(isExpanded ? null : scheme.id)}
+                      onClick={() => toggleExpanded(scheme.id)}
                       aria-expanded={isExpanded}
                     >
                       <span>

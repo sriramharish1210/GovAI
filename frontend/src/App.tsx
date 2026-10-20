@@ -155,9 +155,12 @@ export const App: React.FC = () => {
         setIsAuthModalOpen(false);
         loadBookmarkIds();
         showToast(`Signed in as ${res.data.user.name}`, 'success');
+      } else {
+        const msg = res.error?.message || 'Login failed. Please check credentials and try again.';
+        showToast(msg, 'error');
       }
-    } catch {
-      showToast('Login failed. Please try again.', 'error');
+    } catch (err: any) {
+      showToast(err?.message || 'Login failed. Please check network connection.', 'error');
     }
   };
 

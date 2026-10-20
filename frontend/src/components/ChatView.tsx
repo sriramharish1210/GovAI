@@ -56,6 +56,9 @@ export const ChatView: React.FC = () => {
   const [sessionToDelete, setSessionToDelete] = useState<ChatSession | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Mobile drawer state
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
   const messagesEnd = useRef<HTMLDivElement>(null);
 
   useEffect(() => { loadSessions(); }, []);
@@ -292,15 +295,62 @@ export const ChatView: React.FC = () => {
         <div className="chat-main">
           {/* Header */}
           <div className="chat-topbar">
-            <div className="chat-topbar-title">
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Bot size={15} color="var(--blue)" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+              <button
+                className="btn btn-secondary btn-sm chat-mobile-toggle-btn"
+                onClick={() => setMobileSidebarOpen(true)}
+                title="View conversations"
+                aria-label="View conversations"
+              >
+                <MessageSquare size={13} />
+                <span>Chats ({sessions.length})</span>
+              </button>
+
+              <div className="chat-topbar-title">
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Bot size={15} color="var(--blue)" />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                  <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>GovAI Advisor</span>
+                  {activeId && (
+                    <span style={{ color: 'var(--text-3)', fontWeight: 500, fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      • {sessions.find((s) => s.id === activeId)?.title}
+                    </span>
+                  )}
+                </div>
               </div>
-              GovAI Advisor
             </div>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-3)', fontWeight: 500 }}>
-              Grounded on scheme database & your profile
-            </span>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              {activeId && sessions.find((s) => s.id === activeId) && (
+                <>
+                  <button
+                    className="chat-action-btn"
+                    onClick={(e) => {
+                      const s = sessions.find((item) => item.id === activeId);
+                      if (s) startRename(s, e);
+                    }}
+                    title="Rename conversation"
+                    aria-label="Rename conversation"
+                    style={{ padding: '6px 8px', borderRadius: 'var(--r-sm)', background: 'var(--surface-2)' }}
+                  >
+                    <Edit2 size={13} />
+                  </button>
+                  <button
+                    className="chat-action-btn delete"
+                    onClick={(e) => {
+                      const s = sessions.find((item) => item.id === activeId);
+                      if (s) confirmDelete(s, e);
+                    }}
+                    title="Delete conversation"
+                    aria-label="Delete conversation"
+                    style={{ padding: '6px 8px', borderRadius: 'var(--r-sm)', background: '#fce8e6' }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Messages */}
@@ -441,6 +491,78 @@ export const ChatView: React.FC = () => {
                 {deleting ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : <Trash2 size={14} />}
                 Delete Conversation
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mobile Conversations Drawer ── */}
+      {mobileSidebarOpen && (
+        <div className="modal-overlay" onClick={() => setMobileSidebarOpen(false)}>
+          <div className="modal modal-sm" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 380, maxHeight: '85vh' }}>
+            <div className="modal-header">
+              <div className="modal-title">Conversations ({sessions.length})</div>
+              <button
+                className="btn btn-ghost btn-icon"
+                onClick={() => setMobileSidebarOpen(false)}
+                aria-label="Close"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '16px' }}>
+              <button
+                className="btn btn-primary btn-sm btn-full"
+                onClick={() => {
+                  createSession();
+                  setMobileSidebarOpen(false);
+                }}
+              >
+                <Plus size={15} /> New Conversation
+              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: '55vh', overflowY: 'auto' }}>
+                {sessions.map((s) => (
+                  <div
+                    key={s.id}
+                    className={`chat-session-row ${activeId === s.id ? 'active' : ''}`}
+                    style={{ padding: '2px 4px' }}
+                  >
+                    <button
+                      className="chat-session-btn"
+                      onClick={() => {
+                        setActiveId(s.id);
+                        setMobileSidebarOpen(false);
+                      }}
+                      title={s.title}
+                    >
+                      <MessageSquare size={13} style={{ flexShrink: 0 }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</span>
+                    </button>
+                    <div className="chat-session-actions" style={{ opacity: 1 }}>
+                      <button
+                        className="chat-action-btn"
+                        onClick={(e) => {
+                          startRename(s, e);
+                          setMobileSidebarOpen(false);
+                        }}
+                        title="Rename conversation"
+                      >
+                        <Edit2 size={12} />
+                      </button>
+                      <button
+                        className="chat-action-btn delete"
+                        onClick={(e) => {
+                          confirmDelete(s, e);
+                          setMobileSidebarOpen(false);
+                        }}
+                        title="Delete conversation"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

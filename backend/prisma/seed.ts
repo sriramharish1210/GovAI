@@ -97,7 +97,7 @@ const schemesData: SeedScheme[] = [
     rulesJson: JSON.stringify({
       operator: "AND",
       conditions: [
-        { field: "category", operator: "IN", value: ["OBC", "EWS", "General"] }, // EBC/DNT fit general/EWS/OBC
+        { field: "category", operator: "IN", value: ["OBC", "EBC", "DNT"] },
         { field: "familyIncome", operator: "LTE", value: 250000 },
         { field: "educationLevel", operator: "IN", value: ["11th", "12th", "UG", "PG", "Diploma"] }
       ]
