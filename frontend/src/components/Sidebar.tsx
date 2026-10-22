@@ -32,7 +32,7 @@ const NavLink: React.FC<{
     <span style={{ flex: 1 }}>{label}</span>
     {badge && badge > 0 ? (
       <span style={{
-        background: '#1a73e8',
+        background: '#1B4D3E',
         color: '#fff',
         borderRadius: '10px',
         fontSize: '0.65rem',
@@ -108,7 +108,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               ) : (
                 <div style={{
                   width: 32, height: 32, borderRadius: '50%',
-                  background: 'rgba(26,115,232,0.3)', display: 'flex',
+                  background: 'rgba(27, 77, 62,0.3)', display: 'flex',
                   alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                   color: '#fff', fontWeight: 700, fontSize: '0.8rem',
                 }}>

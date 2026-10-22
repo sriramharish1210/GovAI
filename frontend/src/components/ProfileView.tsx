@@ -1,3 +1,4 @@
+import { PageHeader, ErrorState } from './ui';
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import type { StudentProfile, NotificationPreference } from '../../../shared/types';
@@ -71,10 +72,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
     reminder1Day: true,
   });
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   useEffect(() => { loadProfile(); }, []);
 
   const loadProfile = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await api.getProfile();
       if (res.success && res.data) {
@@ -102,9 +106,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
           });
         }
         if (res.data.notificationPreference) setPrefs(res.data.notificationPreference);
+      } else {
+        setLoadError(res.error?.message ?? 'Could not load your profile.');
       }
     } catch {
-      showToast('Could not load profile', 'error');
+      setLoadError('Could not load your profile.');
     } finally {
       setLoading(false);
     }
@@ -168,12 +174,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
     );
   }
 
+  // Never show an empty editable form after a failed load: saving it would overwrite real data with blanks.
+  if (loadError) {
+    return (
+      <div style={{ maxWidth: 840 }}>
+        <PageHeader kicker="Profile" title="Your profile" />
+        <ErrorState title="Couldn’t load your profile" message={loadError} onRetry={loadProfile} />
+      </div>
+    );
+  }
+
   return (
     <div style={{ maxWidth: 840 }}>
-      <div className="page-header">
-        <h1 className="page-title">My Profile</h1>
-        <p className="page-subtitle">Your student profile matches you with central & state government welfare schemes</p>
-      </div>
+      <PageHeader kicker="Profile" title="Your profile" subtitle="Your details are used to check every scheme for eligibility. The more complete they are, the more accurate your results." />
 
       {/* ── Primary Identity Card ── */}
       <div className="card" style={{ marginBottom: 16, background: 'linear-gradient(135deg, var(--white) 0%, var(--surface) 100%)' }}>
@@ -341,7 +354,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
                         padding: '10px 12px',
                         borderRadius: 'var(--r-md)',
                         border: isSelected ? '2px solid var(--blue)' : '1px solid var(--border)',
-                        background: isSelected ? '#e8f0fe' : 'var(--surface)',
+                        background: isSelected ? '#E4EFDF' : 'var(--surface)',
                         cursor: 'pointer',
                         textAlign: 'left',
                         transition: 'all 0.15s ease',
@@ -416,7 +429,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
         {/* ── Education ── */}
         <div className="card" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 18 }}>
-            <div style={{ width: 28, height: 28, background: '#f3e8ff', borderRadius: 'var(--r-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 28, height: 28, background: '#EAF3E2', borderRadius: 'var(--r-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <GraduationCap size={15} color="#7c3aed" />
             </div>
             <div>

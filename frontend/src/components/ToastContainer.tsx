@@ -11,7 +11,7 @@ export const ToastContainer: React.FC<{ toasts: Toast[] }> = ({ toasts }) => {
         <div key={t.id} className={`toast toast-${t.type}`} role="status">
           {t.type === 'success' && <CheckCircle size={16} color="#137333" />}
           {t.type === 'error'   && <AlertCircle size={16} color="#c5221f" />}
-          {t.type === 'info'    && <Info size={16} color="#1a73e8" />}
+          {t.type === 'info'    && <Info size={16} color="#1B4D3E" />}
           <span>{t.message}</span>
         </div>
       ))}

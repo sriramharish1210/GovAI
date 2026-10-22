@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import type { Scheme } from '../../../shared/types';
+import { Link } from 'react-router-dom';
 import { GitCompare, X, ExternalLink, Compass } from 'lucide-react';
+import { useRecommendations } from '../hooks/RecommendationsContext';
+import { SchemeStatusBadge } from './shared/SchemeStatusBadge';
+import { PageHeader, EmptyState, ErrorState, fmtDate } from './ui';
 import { VerificationBadge } from './shared/SchemeStatusBadge';
 import { DeadlineBadge } from './shared/DeadlineBadge';
 
@@ -13,6 +17,7 @@ interface ComparisonViewProps {
 }
 
 const ROW_DEFS = [
+  { key: 'mine',         label: 'Your eligibility' },
   { key: 'verification', label: 'Verification' },
   { key: 'govType',      label: 'Government Type' },
   { key: 'deadline',     label: 'Deadline' },
@@ -22,8 +27,10 @@ const ROW_DEFS = [
   { key: 'source',       label: 'Official Source' },
 ];
 
-function renderCell(key: string, scheme: Scheme): React.ReactNode {
+function renderCell(key: string, scheme: Scheme, status?: string): React.ReactNode {
   switch (key) {
+    case 'mine':
+      return status ? <SchemeStatusBadge status={status} /> : <span style={{ color: 'var(--text-4)', fontSize: '0.82rem' }}>Complete your profile to see this</span>;
     case 'verification':
       return <VerificationBadge status={scheme.verificationStatus} />;
     case 'govType':
@@ -68,6 +75,9 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
 }) => {
   const [schemes, setSchemes] = useState<Scheme[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { recs, hasProfile } = useRecommendations();
+  const statusById = new Map(recs.map((r) => [r.scheme.id, r.eligibilityStatus]));
 
   useEffect(() => {
     if (selectedSchemeIds.length >= 2) fetchComparison();
@@ -76,96 +86,63 @@ export const ComparisonView: React.FC<ComparisonViewProps> = ({
 
   const fetchComparison = async () => {
     setLoading(true);
-    try {
-      const res = await api.compareSchemes(selectedSchemeIds);
-      if (res.success && res.data) setSchemes(res.data);
-    } finally { setLoading(false); }
+    setError(null);
+    const res = await api.compareSchemes(selectedSchemeIds);
+    if (res.success && res.data) setSchemes(res.data);
+    else setError(res.error?.message ?? 'Could not compare these schemes.');
+    setLoading(false);
   };
 
   return (
     <div>
-      <div className="page-header">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <h1 className="page-title">Compare Schemes</h1>
-            <p className="page-subtitle">Side-by-side comparison of 2–4 schemes</p>
-          </div>
-          {selectedSchemeIds.length > 0 && (
-            <button className="btn btn-secondary btn-sm" onClick={onClearCompare}>
-              <X size={14} /> Clear all
-            </button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        kicker="Compare"
+        title="Compare schemes"
+        subtitle="Put two to four schemes side by side."
+        actions={selectedSchemeIds.length > 0 && <button className="btn btn-secondary btn-sm" onClick={onClearCompare}><X size={14} /> Clear all</button>}
+      />
 
       {selectedSchemeIds.length < 2 ? (
-        <div className="card">
-          <div className="empty-state">
-            <div className="empty-state-icon" style={{ background: 'var(--blue-light)', color: 'var(--blue)' }}>
-              <GitCompare size={28} />
-            </div>
-            <div className="empty-state-title">Select 2 to 4 schemes to compare</div>
-            <p className="empty-state-body">
-              Browse the Discover page and tap the compare icon on any scheme card.
-              {selectedSchemeIds.length === 1 && ' You have 1 scheme selected — add at least one more.'}
-            </p>
-            {selectedSchemeIds.length === 0 ? (
-              <a href="#" onClick={(e) => { e.preventDefault(); }} className="btn btn-primary" style={{ pointerEvents: 'none', opacity: 0.5 }}>
-                <Compass size={16} /> Go to Discover
-              </a>
-            ) : (
-              <div className="info-banner" style={{ display: 'inline-flex', marginTop: 0 }}>
-                1 scheme selected — add 1 more to compare
-              </div>
-            )}
-          </div>
-        </div>
+        <EmptyState
+          icon={<GitCompare size={24} />}
+          title="Choose at least two schemes"
+          body={selectedSchemeIds.length === 1 ? 'One scheme is selected. Add at least one more using the compare icon on any scheme card.' : 'Use the compare icon on any scheme card in Discover, Matches or Saved.'}
+          action={<Link className="btn btn-primary" to="/app/discover"><Compass size={16} /> Go to Discover</Link>}
+        />
+      ) : error && !loading ? (
+        <ErrorState title="Couldn’t compare these schemes" message={error} onRetry={fetchComparison} />
       ) : loading ? (
-        <div className="card">
-          <div style={{ textAlign: 'center', padding: 40 }}>
-            <div className="spinner spinner-blue" style={{ margin: '0 auto' }} />
-          </div>
-        </div>
+        <div className="skeleton" style={{ height: 320, borderRadius: 18 }} />
       ) : (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="cmp-card">
           <div className="comparison-wrapper">
             <table className="comparison-table">
               <thead>
                 <tr>
-                  <th style={{ width: 130 }}>Scheme</th>
+                  <th scope="col"><span className="sr-only">Attribute</span></th>
                   {schemes.map((s) => (
-                    <th key={s.id}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                    <th key={s.id} scope="col">
+                      <div className="cmp-head">
                         <div>
-                          <div className="comparison-scheme-header">{s.name}</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-3)', marginTop: 3 }}>{s.department}</div>
+                          <button className="cmp-name" onClick={() => onSelectScheme(s)}>{s.name}</button>
+                          <div className="cmp-dept">{s.department}</div>
                         </div>
-                        <button className="btn btn-ghost btn-icon-sm" onClick={() => onRemoveFromCompare(s.id)} aria-label={`Remove ${s.name}`}>
-                          <X size={13} />
-                        </button>
+                        <button className="ui-icon-btn" onClick={() => onRemoveFromCompare(s.id)} aria-label={`Remove ${s.name} from comparison`}><X size={14} /></button>
                       </div>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {ROW_DEFS.map(({ key, label }) => (
+                {ROW_DEFS.filter((r) => r.key !== 'mine' || hasProfile).map(({ key, label }) => (
                   <tr key={key}>
-                    <th>{label}</th>
-                    {schemes.map((s) => (
-                      <td key={s.id}>{renderCell(key, s)}</td>
-                    ))}
+                    <th scope="row">{label}</th>
+                    {schemes.map((s) => <td key={s.id}>{renderCell(key, s, statusById.get(s.id))}</td>)}
                   </tr>
                 ))}
                 <tr>
-                  <th>Action</th>
-                  {schemes.map((s) => (
-                    <td key={s.id}>
-                      <button className="btn btn-primary btn-sm" style={{ width: '100%' }} onClick={() => onSelectScheme(s)}>
-                        View Details
-                      </button>
-                    </td>
-                  ))}
+                  <th scope="row">Opens</th>
+                  {schemes.map((s) => <td key={s.id}>{s.startDate ? fmtDate(s.startDate) : '—'}</td>)}
                 </tr>
               </tbody>
             </table>

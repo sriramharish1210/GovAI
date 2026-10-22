@@ -3,16 +3,15 @@
    Deep navy civic-tech platform for Indian students
 ================================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
   /* Core Palette */
   --navy: #0f2240;
   --navy-mid: #1a3560;
   --navy-light: #243e6e;
-  --blue: #1a73e8;
+  --blue: #1B4D3E;
   --blue-hover: #1558c0;
-  --blue-light: #e8f0fe;
+  --blue-light: #E4EFDF;
   --blue-subtle: #f0f4ff;
 
   /* Status */
@@ -173,7 +172,7 @@ body {
 }
 
 .sidebar-link.active {
-  background: rgba(26, 115, 232, 0.25);
+  background: rgba(27, 77, 62, 0.25);
   color: #fff;
   font-weight: 600;
 }
@@ -579,7 +578,7 @@ body {
 .form-input:focus, .form-select:focus, .form-textarea:focus {
   outline: none;
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.12);
+  box-shadow: 0 0 0 3px rgba(27, 77, 62, 0.12);
 }
 
 .form-input:disabled, .form-select:disabled {
@@ -652,7 +651,7 @@ body {
   border-radius: 20px;
   font-size: 0.78rem;
   font-weight: 600;
-  border: 1px solid rgba(26,115,232,0.2);
+  border: 1px solid rgba(27, 77, 62,0.2);
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -739,7 +738,7 @@ body {
 
 .chat-session-row.active {
   background: var(--blue-light);
-  border-color: rgba(26, 115, 232, 0.2);
+  border-color: rgba(27, 77, 62, 0.2);
 }
 
 .chat-session-btn {
@@ -909,7 +908,7 @@ body {
 
 .chat-suggestion-btn:hover {
   background: var(--blue-light);
-  border-color: rgba(26,115,232,0.3);
+  border-color: rgba(27, 77, 62,0.3);
   color: var(--blue);
 }
 
@@ -986,7 +985,7 @@ body {
 .chat-input:focus {
   outline: none;
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(26,115,232,0.1);
+  box-shadow: 0 0 0 3px rgba(27, 77, 62,0.1);
 }
 
 /* ================================================================
@@ -1188,7 +1187,7 @@ body {
 
 .info-banner {
   background: var(--blue-light);
-  border: 1px solid rgba(26,115,232,0.25);
+  border: 1px solid rgba(27, 77, 62,0.25);
   border-radius: var(--r-md);
   padding: 12px 16px;
   font-size: 0.875rem;
@@ -1214,7 +1213,7 @@ body {
 }
 
 .spinner-blue {
-  border-color: rgba(26,115,232,0.25);
+  border-color: rgba(27, 77, 62,0.25);
   border-top-color: var(--blue);
 }
 
@@ -1483,8 +1482,8 @@ body {
 ================================================================ */
 
 .ai-card {
-  background: linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 100%);
-  border: 1px solid rgba(26,115,232,0.2);
+  background: linear-gradient(135deg, #f0f4ff 0%, #E4EFDF 100%);
+  border: 1px solid rgba(27, 77, 62,0.2);
   border-radius: var(--r-lg);
   padding: 14px 16px;
 }

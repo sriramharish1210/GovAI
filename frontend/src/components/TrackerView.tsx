@@ -1,194 +1,112 @@
 import React, { useState, useEffect } from 'react';
-import { api } from '../api';
+import { Link } from 'react-router-dom';
+import { CheckSquare, Clock, Send, Award, List, Columns3, Compass } from 'lucide-react';
+import { api, unwrap, errorMessage } from '../api';
 import type { Application, Scheme } from '../../../shared/types';
-import { CheckSquare, Clock, CheckCircle2, ListFilter } from 'lucide-react';
-import { DeadlineBadge } from './shared/DeadlineBadge';
 import { useToast } from '../App';
+import { DeadlineBadge } from './shared/DeadlineBadge';
+import { PageHeader, EmptyState, ErrorState } from './ui';
 
-interface TrackerViewProps {
-  onSelectScheme: (s: Scheme) => void;
-}
+const STAGES = [
+  { key: 'PLANNING_TO_APPLY', label: 'Planning', icon: <Clock size={15} /> },
+  { key: 'APPLIED', label: 'Applied', icon: <Send size={15} /> },
+  { key: 'COMPLETED', label: 'Completed', icon: <Award size={15} /> },
+];
+const LABELS: Record<string, string> = { NOT_APPLIED: 'Not applied', PLANNING_TO_APPLY: 'Planning to apply', APPLIED: 'Applied', COMPLETED: 'Completed / awarded' };
 
-const STATUS_CONFIG = {
-  PLANNING_TO_APPLY: { label: 'Planning',  color: 'var(--warning)',  bg: 'var(--warning-bg)',  icon: <Clock size={14} /> },
-  APPLIED:           { label: 'Applied',   color: 'var(--blue)',    bg: 'var(--blue-light)',  icon: <CheckSquare size={14} /> },
-  COMPLETED:         { label: 'Completed', color: 'var(--success)', bg: 'var(--success-bg)', icon: <CheckCircle2 size={14} /> },
-};
-
-const APP_LABELS: Record<string, string> = {
-  NOT_APPLIED: 'Not Applied',
-  PLANNING_TO_APPLY: 'Planning to Apply',
-  APPLIED: 'Applied',
-  COMPLETED: 'Completed / Awarded',
-};
-
-export const TrackerView: React.FC<TrackerViewProps> = ({ onSelectScheme }) => {
+export const TrackerView: React.FC<{ onSelectScheme: (s: Scheme) => void }> = ({ onSelectScheme }) => {
   const { showToast } = useToast();
   const [apps, setApps] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'kanban' | 'list'>('list');
+  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<'list' | 'board'>('list');
 
-  useEffect(() => { fetchApps(); }, []);
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
+    setError(null);
+    const res = await api.getApplications();
+    if (res.success && res.data) setApps(res.data);
+    else if (!silent) setError(res.error?.message ?? 'Could not load your applications.');
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
 
-  const fetchApps = async () => {
-    setLoading(true);
+  const update = async (schemeId: string, status: string, notes?: string) => {
     try {
-      const res = await api.getApplications();
-      if (res.success && res.data) setApps(res.data);
-    } finally { setLoading(false); }
+      unwrap(await api.upsertApplication({ schemeId, status, notes }));
+      showToast('Application updated');
+      load(true);
+    } catch (e) {
+      showToast(errorMessage(e, 'Failed to update application'), 'error');
+      load(true);
+    }
   };
 
-  const handleStatusChange = async (schemeId: string, status: string, notes?: string) => {
-    try {
-      await api.upsertApplication({ schemeId, status, notes });
-      showToast('Application status updated');
-      fetchApps();
-    } catch { showToast('Failed to update status', 'error'); }
-  };
-
-  if (loading) {
-    return (
-      <div>
-        <div className="page-header"><h1 className="page-title">Applications</h1></div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {[1,2,3].map((i) => <div key={i} className="skeleton" style={{ height: 120, borderRadius: 'var(--r-lg)' }} />)}
-        </div>
-      </div>
-    );
-  }
-
-  if (apps.length === 0) {
-    return (
-      <div>
-        <div className="page-header">
-          <h1 className="page-title">Applications</h1>
-          <p className="page-subtitle">Track your scheme application pipeline</p>
-        </div>
-        <div className="card">
-          <div className="empty-state">
-            <div className="empty-state-icon"><CheckSquare size={28} style={{ color: 'var(--text-4)' }} /></div>
-            <div className="empty-state-title">No applications tracked yet</div>
-            <p className="empty-state-body">
-              Set a status on any scheme — "Planning to Apply", "Applied", or "Completed" — from the scheme detail page.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const grouped: Record<string, Application[]> = {
-    PLANNING_TO_APPLY: apps.filter((a) => a.status === 'PLANNING_TO_APPLY'),
-    APPLIED:           apps.filter((a) => a.status === 'APPLIED'),
-    COMPLETED:         apps.filter((a) => a.status === 'COMPLETED'),
-  };
+  const tracked = apps.filter((a) => a.scheme && a.status !== 'NOT_APPLIED');
+  const by = (k: string) => tracked.filter((a) => a.status === k);
 
   return (
     <div>
-      <div className="page-header">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <h1 className="page-title">Applications</h1>
-            <p className="page-subtitle">{apps.length} scheme{apps.length !== 1 ? 's' : ''} tracked</p>
+      <PageHeader
+        kicker="Applications"
+        title="Application tracker"
+        subtitle={tracked.length ? `${tracked.length} scheme${tracked.length !== 1 ? 's' : ''} tracked` : 'Follow each application from planning to award.'}
+        actions={tracked.length > 0 && (
+          <div className="ui-seg" role="group" aria-label="View">
+            <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}><List size={14} /> List</button>
+            <button className={view === 'board' ? 'on' : ''} onClick={() => setView('board')}><Columns3 size={14} /> Board</button>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className={`btn btn-sm ${view === 'list' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('list')}>
-              <ListFilter size={14} /> List
-            </button>
-            <button className={`btn btn-sm ${view === 'kanban' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setView('kanban')}>
-              Kanban
-            </button>
-          </div>
-        </div>
-      </div>
+        )}
+      />
 
-      {/* Summary stat row */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-        {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-          <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: cfg.bg, borderRadius: 'var(--r-md)', color: cfg.color, fontSize: '0.85rem', fontWeight: 600 }}>
-            {cfg.icon} {grouped[key]?.length ?? 0} {cfg.label}
-          </div>
-        ))}
-      </div>
-
-      {view === 'list' ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {apps.map((app) => {
-            const scheme = app.scheme;
-            if (!scheme) return null;
-            const cfg = STATUS_CONFIG[app.status as keyof typeof STATUS_CONFIG];
-
-            return (
-              <div key={app.id} className="card" style={{ borderLeft: `3px solid ${cfg?.color ?? 'var(--border)'}`, padding: '18px 22px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-1)', marginBottom: 4 }}>{scheme.name}</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-3)' }}>{scheme.department}</div>
-                    {scheme.deadline && <div style={{ marginTop: 6 }}><DeadlineBadge deadline={scheme.deadline} /></div>}
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <select
-                      className="form-select"
-                      style={{ width: 'auto', padding: '6px 10px', fontSize: '0.82rem' }}
-                      value={app.status}
-                      onChange={(e) => handleStatusChange(scheme.id, e.target.value, app.notes ?? undefined)}
-                      aria-label="Application status"
-                    >
-                      {Object.entries(APP_LABELS).map(([val, label]) => (
-                        <option key={val} value={val}>{label}</option>
-                      ))}
-                    </select>
-                    <button className="btn btn-secondary btn-sm" onClick={() => onSelectScheme(scheme)}>Details</button>
-                  </div>
-                </div>
-
-                {/* Notes */}
-                <div style={{ marginTop: 12 }}>
-                  <input
-                    type="text"
-                    className="form-input"
-                    style={{ fontSize: '0.82rem' }}
-                    placeholder="Add notes — reference number, portal link, documents submitted…"
-                    defaultValue={app.notes ?? ''}
-                    onBlur={(e) => handleStatusChange(scheme.id, app.status, e.target.value)}
-                    aria-label="Application notes"
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      {error ? <ErrorState title="Couldn’t load applications" message={error} onRetry={() => load()} />
+      : loading ? <div className="skeleton" style={{ height: 220, borderRadius: 18 }} />
+      : tracked.length === 0 ? (
+        <EmptyState icon={<CheckSquare size={24} />} title="No applications tracked yet"
+          body="Open any scheme and set its status to Planning, Applied or Completed to start tracking it here."
+          action={<Link className="btn btn-primary" to="/app/discover"><Compass size={16} /> Discover schemes</Link>} />
       ) : (
-        /* Kanban */
-        <div className="kanban-grid">
-          {Object.entries(STATUS_CONFIG).map(([status, cfg]) => (
-            <div key={status} className="kanban-col">
-              <div className="kanban-col-header" style={{ color: cfg.color, background: cfg.bg }}>
-                {cfg.icon} {cfg.label}
-                <span style={{ marginLeft: 'auto', fontSize: '0.75rem', fontWeight: 800 }}>
-                  {grouped[status]?.length ?? 0}
-                </span>
-              </div>
-              <div className="kanban-cards">
-                {(grouped[status] ?? []).map((app) => {
-                  const scheme = app.scheme;
-                  if (!scheme) return null;
-                  return (
-                    <div key={app.id} className="kanban-card" onClick={() => onSelectScheme(scheme)}>
-                      <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: 4, color: 'var(--text-1)' }}>{scheme.name}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-3)', marginBottom: 6 }}>{scheme.department}</div>
-                      {scheme.deadline && <DeadlineBadge deadline={scheme.deadline} />}
+        <>
+          <div className="trk-stats">
+            {STAGES.map((s) => <div key={s.key}>{s.icon}<b>{by(s.key).length}</b><span>{s.label}</span></div>)}
+          </div>
+
+          {view === 'list' ? (
+            <ul className="trk-list">
+              {tracked.map((a) => {
+                const s = a.scheme!;
+                return (
+                  <li key={a.id} className="trk-item">
+                    <div className="trk-main">
+                      <button className="trk-name" onClick={() => onSelectScheme(s)}>{s.name}</button>
+                      <span>{s.department}</span>
+                      {s.deadline && <DeadlineBadge deadline={s.deadline} />}
                     </div>
-                  );
-                })}
-                {(grouped[status] ?? []).length === 0 && (
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-4)', textAlign: 'center', padding: '12px 0' }}>No applications</div>
-                )}
-              </div>
+                    <select className="form-select" value={a.status} onChange={(e) => update(s.id, e.target.value, a.notes ?? undefined)} aria-label={`Status for ${s.name}`}>
+                      {Object.entries(LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                    <input className="form-input trk-notes" defaultValue={a.notes ?? ''} placeholder="Notes — reference number, documents submitted…" aria-label={`Notes for ${s.name}`}
+                      onBlur={(e) => { if (e.target.value !== (a.notes ?? '')) update(s.id, a.status, e.target.value); }} />
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <div className="trk-board">
+              {STAGES.map((st) => (
+                <section key={st.key}>
+                  <h3>{st.icon} {st.label} <span>{by(st.key).length}</span></h3>
+                  {by(st.key).length === 0 ? <p className="dash-muted">Nothing here yet.</p> : by(st.key).map((a) => (
+                    <button key={a.id} className="trk-card" onClick={() => onSelectScheme(a.scheme!)}>
+                      <strong>{a.scheme!.name}</strong><span>{a.scheme!.department}</span>
+                      {a.scheme!.deadline && <DeadlineBadge deadline={a.scheme!.deadline} compact />}
+                    </button>
+                  ))}
+                </section>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );

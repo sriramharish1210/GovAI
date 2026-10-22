@@ -3,6 +3,7 @@ import { api } from '../api';
 import type { ChatSession, ChatMessage } from '../../../shared/types';
 import { MessageSquare, Send, Plus, Bot, User, Sparkles, Edit2, Trash2, Check, X, AlertTriangle } from 'lucide-react';
 import { useToast } from '../App';
+import { PageHeader } from './ui';
 
 const SUGGESTED_PROMPTS = [
   { emoji: '🎓', text: 'Which schemes am I eligible for?' },
@@ -81,8 +82,12 @@ export const ChatView: React.FC = () => {
         } else if (res.data.length === 0) {
           createSession();
         }
+      } else {
+        showToast(res.error?.message ?? 'Could not load your conversations', 'error');
       }
-    } catch {}
+    } catch {
+      showToast('Could not load your conversations', 'error');
+    }
   };
 
   const loadMessages = async (id: string) => {
@@ -193,20 +198,21 @@ export const ChatView: React.FC = () => {
     };
     setMessages((prev) => [...prev, temp]);
 
-    try {
-      const res = await api.sendChatMessage(activeId, msg);
-      if (res.success && res.data) {
-        setMessages((prev) => [...prev, res.data as ChatMessage]);
-      }
-    } finally { setSending(false); }
+    const res = await api.sendChatMessage(activeId, msg);
+    if (res.success && res.data) {
+      setMessages((prev) => [...prev, res.data as ChatMessage]);
+    } else {
+      // Remove the optimistic message, restore the draft, and say what happened
+      setMessages((prev) => prev.filter((m) => m.id !== temp.id));
+      setInput(msg);
+      showToast(res.error?.message ?? 'Your message could not be sent. Please try again.', 'error');
+    }
+    setSending(false);
   };
 
   return (
     <div>
-      <div className="page-header">
-        <h1 className="page-title">AI Advisor</h1>
-        <p className="page-subtitle">Ask questions about eligibility, documents, deadlines, and how to apply</p>
-      </div>
+      <PageHeader kicker="Assistant" title="AI advisor" subtitle="Ask about eligibility, documents, deadlines and how to apply." />
 
       <div className="chat-layout">
         {/* ── Session sidebar ── */}

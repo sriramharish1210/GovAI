@@ -27,7 +27,7 @@ export const MobileTopbar: React.FC<MobileTopbarProps> = ({ title, currentUser, 
           ) : (
             <div style={{
               width: 30, height: 30, borderRadius: '50%',
-              background: 'rgba(26,115,232,0.5)', display: 'flex',
+              background: 'rgba(27, 77, 62,0.5)', display: 'flex',
               alignItems: 'center', justifyContent: 'center',
               color: '#fff', fontWeight: 700, fontSize: '0.82rem',
             }}>

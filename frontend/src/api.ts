@@ -27,6 +27,32 @@ export const setAuthToken = (token: string | null) => {
 
 export const getAuthToken = () => authToken;
 
+export class ApiError extends Error {
+  code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+const failure = <T,>(code: string, message: string): APIResponse<T> => ({
+  success: false,
+  data: null,
+  error: { code, message },
+});
+
+/** Unwrap an APIResponse, throwing ApiError on failure. */
+export function unwrap<T>(res: APIResponse<T>): T {
+  if (!res.success || res.data === null || res.data === undefined) {
+    throw new ApiError(res.error?.code ?? 'UNKNOWN', res.error?.message ?? 'Something went wrong. Please try again.');
+  }
+  return res.data;
+}
+
+/** Message suitable for showing to a user from any thrown value. */
+export const errorMessage = (e: unknown, fallback = 'Something went wrong. Please try again.') =>
+  e instanceof Error && e.message ? e.message : fallback;
+
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<APIResponse<T>> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -37,13 +63,31 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers['Authorization'] = `Bearer ${authToken}`;
   }
 
-  const res = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+  } catch {
+    return failure('NETWORK_ERROR', 'Cannot reach the GovAI server. Check your connection and try again.');
+  }
 
-  const data = await res.json();
-  return data;
+  if (res.status === 401 && authToken) {
+    setAuthToken(null);
+    window.dispatchEvent(new Event('govai:unauthorized'));
+  }
+
+  const contentType = res.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) {
+    return failure(
+      res.ok ? 'INVALID_RESPONSE' : `HTTP_${res.status}`,
+      res.ok ? 'The server sent an unexpected response.' : `The server returned an error (${res.status}).`
+    );
+  }
+
+  try {
+    return (await res.json()) as APIResponse<T>;
+  } catch {
+    return failure('INVALID_RESPONSE', 'The server sent an unreadable response.');
+  }
 }
 
 export const api = {
@@ -151,7 +195,16 @@ export const api = {
       method: 'POST',
       headers,
     });
-    if (!res.ok) throw new Error('Failed to generate report');
+    if (res.status === 401) {
+      setAuthToken(null);
+      window.dispatchEvent(new Event('govai:unauthorized'));
+      throw new ApiError('UNAUTHORIZED', 'Your session has expired. Please sign in again.');
+    }
+    if (!res.ok) {
+      let message = 'Could not generate the report. Please complete your profile first.';
+      try { message = (await res.json())?.error?.message ?? message; } catch { /* keep default message */ }
+      throw new ApiError('REPORT_FAILED', message);
+    }
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -160,6 +213,7 @@ export const api = {
     document.body.appendChild(a);
     a.click();
     a.remove();
+    window.setTimeout(() => window.URL.revokeObjectURL(url), 10_000);
   },
 
   // Explanations

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import { X, Search, BookOpen } from 'lucide-react';
 
@@ -47,6 +47,15 @@ export const TermExplainerModal: React.FC<TermExplainerModalProps> = ({ isOpen, 
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState('');
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const explain = async (termToExplain: string) => {
@@ -70,7 +79,7 @@ export const TermExplainerModal: React.FC<TermExplainerModalProps> = ({ isOpen, 
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal-md" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '85vh' }}>
+      <div className="modal modal-md" role="dialog" aria-modal="true" aria-label="Government glossary" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '85vh' }}>
         <div className="modal-header">
           <div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

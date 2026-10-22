@@ -1,279 +1,173 @@
-import React, { useState, useEffect } from 'react';
-import { api } from '../api';
+import React, { useState, useEffect, useContext } from 'react';
+import { useRecommendations } from '../hooks/RecommendationsContext';
+import { BookmarkContext, CompareContext } from '../App';
 import type { RecommendationResult, Scheme } from '../../../shared/types';
-import {
-  Sparkles, RefreshCw, ChevronDown, ChevronUp, CheckCircle,
-  XCircle, User, FileDown, ChevronRight,
-} from 'lucide-react';
+import { Sparkles, RefreshCw, ChevronDown, ChevronUp, CheckCircle2, XCircle, User, ChevronRight, Bookmark, GitCompare, Inbox } from 'lucide-react';
 import { SchemeStatusBadge, VerificationBadge } from './shared/SchemeStatusBadge';
 import { DeadlineBadge } from './shared/DeadlineBadge';
 import { SchemeCardSkeleton } from './shared/SkeletonCard';
+import { PageHeader, EmptyState, ErrorState, SourceLink, fmtMoney, schemeKinds, humanize } from './ui';
 
-interface RecommendationsViewProps {
+interface Props {
   onSelectScheme: (scheme: Scheme) => void;
   onNavigate: (page: string) => void;
 }
 
-const STATUS_ORDER = ['ELIGIBLE', 'NEEDS_VERIFICATION', 'LIKELY_ELIGIBLE', 'NOT_ELIGIBLE'];
+const TABS = [
+  { val: '', label: 'All' },
+  { val: 'ELIGIBLE', label: 'Eligible' },
+  { val: 'NEEDS_VERIFICATION', label: 'Needs verification' },
+  { val: 'NOT_ELIGIBLE', label: 'Not eligible' },
+];
 
-export const RecommendationsView: React.FC<RecommendationsViewProps> = ({ onSelectScheme, onNavigate }) => {
-  const [loading, setLoading]         = useState(true);
-  const [hasProfile, setHasProfile]   = useState(true);
-  const [recs, setRecs]               = useState<RecommendationResult[]>([]);
+const RecCard: React.FC<{ rec: RecommendationResult; onOpen: (s: Scheme) => void }> = ({ rec, onOpen }) => {
+  const { scheme, matchScore, eligibilityStatus, rulesEvaluated, aiExplanation } = rec;
+  const { bookmarkedIds, toggleBookmark } = useContext(BookmarkContext);
+  const { selectedForCompare, toggleCompare } = useContext(CompareContext);
+  const [open, setOpen] = useState(false);
+  const rules = rulesEvaluated ?? [];
+  const passed = rules.filter((r) => r.passed).length;
+  const failed = rules.filter((r) => !r.passed);
+  const saved = bookmarkedIds.has(scheme.id);
+  const compared = selectedForCompare.includes(scheme.id);
+  const money = scheme.benefits?.find((b) => b.amount)?.amount;
+  const tone = eligibilityStatus === 'ELIGIBLE' ? 'ok' : eligibilityStatus === 'NEEDS_VERIFICATION' ? 'warn' : 'no';
+
+  return (
+    <article className={`rec rec-${tone}`}>
+      <div className="rec-main">
+        <div className="rec-badges">
+          <SchemeStatusBadge status={eligibilityStatus} />
+          <VerificationBadge status={scheme.verificationStatus} />
+          <span className="ui-scheme-where">{scheme.centralOrState === 'CENTRAL' ? 'Central' : 'State'}{scheme.state ? ` · ${scheme.state}` : ''}</span>
+        </div>
+        <h3 className="rec-title"><button onClick={() => onOpen(scheme)}>{scheme.name}</button></h3>
+        <p className="ui-scheme-dept">{scheme.department}</p>
+        <p className="rec-desc">{scheme.shortDescription}</p>
+
+        {failed.length > 0 && eligibilityStatus !== 'ELIGIBLE' && (
+          <div className="rec-why">
+            <strong>{eligibilityStatus === 'NEEDS_VERIFICATION' ? 'Still to confirm' : 'Why it doesn’t match'}</strong>
+            <ul>{failed.slice(0, 3).map((r, i) => <li key={i}>{r.message}</li>)}</ul>
+          </div>
+        )}
+        {aiExplanation && (
+          <div className="ai-card" style={{ marginTop: 12 }}>
+            <div className="ai-card-label"><Sparkles size={13} /> AI advisor note</div>
+            <p className="ai-card-text">{aiExplanation}</p>
+          </div>
+        )}
+
+        <div className="ui-scheme-tags" style={{ marginTop: 12 }}>
+          {schemeKinds(scheme).map((k) => <span key={k} className="ui-chip">{k}</span>)}
+          {money ? <span className="ui-chip ui-chip-lime">Up to {fmtMoney(money)}</span> : null}
+          <DeadlineBadge deadline={scheme.deadline} />
+        </div>
+
+        {rules.length > 0 && (
+          <div className="rec-rules">
+            <button className="rec-rules-toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+              <span>Eligibility breakdown · <b>{passed}</b> of {rules.length} rules met</span>
+              {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+            {open && (
+              <ul className="rec-rule-list">
+                {rules.map((r, i) => (
+                  <li key={i} className={r.passed ? 'pass' : 'fail'}>
+                    {r.passed ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
+                    <span><b>{humanize(r.field)}</b> — {r.message}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+
+      <aside className="rec-side">
+        <div className="rec-score" aria-label={`Match score ${matchScore} percent`}>
+          <b>{matchScore}<small>%</small></b>
+          <span>match</span>
+          <div className="rec-meter"><i style={{ width: `${Math.max(0, Math.min(100, matchScore))}%` }} /></div>
+        </div>
+        <div className="rec-actions">
+          <button className="btn btn-primary btn-sm" onClick={() => onOpen(scheme)}>View details</button>
+          {eligibilityStatus !== 'NOT_ELIGIBLE' && scheme.officialApplicationUrl && (
+            <SourceLink href={scheme.officialApplicationUrl}>Apply on official site</SourceLink>
+          )}
+          <div className="rec-icons">
+            <button className={`ui-icon-btn ${saved ? 'on' : ''}`} onClick={() => toggleBookmark(scheme.id)} aria-pressed={saved} aria-label={saved ? 'Remove from saved' : 'Save scheme'}><Bookmark size={16} fill={saved ? 'currentColor' : 'none'} /></button>
+            <button className={`ui-icon-btn ${compared ? 'on' : ''}`} onClick={() => toggleCompare(scheme.id)} aria-pressed={compared} aria-label={compared ? 'Remove from compare' : 'Add to compare'}><GitCompare size={16} /></button>
+          </div>
+        </div>
+      </aside>
+    </article>
+  );
+};
+
+export const RecommendationsView: React.FC<Props> = ({ onSelectScheme, onNavigate }) => {
+  const { recs: allRecs, hasProfile, loading, error, explained, counts, refresh } = useRecommendations();
   const [statusFilter, setStatusFilter] = useState('');
-  const [includeAi, setIncludeAi]     = useState(false);
-  const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
-  const [aiLoading, setAiLoading]     = useState<Record<string, boolean>>({});
+  const [includeAi, setIncludeAi] = useState(false);
 
-  const toggleExpanded = (schemeId: string) => {
-    setExpandedIds((prev) => ({
-      ...prev,
-      [schemeId]: !prev[schemeId],
-    }));
-  };
+  // Statistics come from the complete result; only the visible list is filtered.
+  useEffect(() => { if (includeAi && !explained) refresh({ explain: true }); }, [includeAi, explained, refresh]);
 
-  useEffect(() => { fetchRecs(); }, [statusFilter]);
-  useEffect(() => { if (includeAi) fetchRecs(); }, [includeAi]);
+  const tabCount = (val: string) =>
+    val === '' ? counts.all : val === 'ELIGIBLE' ? counts.eligible : val === 'NEEDS_VERIFICATION' ? counts.needs : counts.notEligible;
+  const visible = statusFilter ? allRecs.filter((r) => r.eligibilityStatus === statusFilter) : allRecs;
 
-  const fetchRecs = async () => {
-    setLoading(true);
-    try {
-      const res = await api.getRecommendations(includeAi, statusFilter);
-      if (res.success && res.data) {
-        setHasProfile(res.data.hasProfile);
-        const sorted = [...(res.data.recommendations ?? [])].sort(
-          (a, b) => STATUS_ORDER.indexOf(a.eligibilityStatus) - STATUS_ORDER.indexOf(b.eligibilityStatus)
-        );
-        setRecs(sorted);
-      }
-    } finally { setLoading(false); }
-  };
-
-  const counts = {
-    all: recs.length,
-    eligible: recs.filter((r) => r.eligibilityStatus === 'ELIGIBLE').length,
-    needs: recs.filter((r) => r.eligibilityStatus === 'NEEDS_VERIFICATION').length,
-    not: recs.filter((r) => r.eligibilityStatus === 'NOT_ELIGIBLE').length,
-  };
-
-  /* ── No profile ── */
-  if (!hasProfile && !loading) {
+  if (!hasProfile && !loading && !error) {
     return (
       <div>
-        <div className="page-header">
-          <h1 className="page-title">Recommended for You</h1>
-          <p className="page-subtitle">Personalized scheme matches based on your profile</p>
-        </div>
-        <div className="card">
-          <div className="empty-state">
-            <div className="empty-state-icon" style={{ background: '#fef3e2', color: 'var(--warning)' }}>
-              <User size={28} />
-            </div>
-            <div className="empty-state-title">Your recommendations are waiting</div>
-            <p className="empty-state-body">
-              Complete your student profile so GovAI can check your eligibility across all 83+ government schemes — education, income, category, and location all factor in.
-            </p>
-            <button className="btn btn-primary" onClick={() => onNavigate('profile')}>
-              Complete My Profile <ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
-        <div className="card" style={{ marginTop: 16 }}>
-          <div style={{ fontWeight: 700, marginBottom: 12, color: 'var(--text-2)', fontSize: '0.875rem' }}>What personalization unlocks</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-            {[
-              { emoji: '✓', text: 'Eligible scheme matches' },
-              { emoji: '✓', text: 'Match score for each scheme' },
-              { emoji: '✓', text: 'AI-generated explanations' },
-              { emoji: '✓', text: 'Rule-by-rule breakdown' },
-            ].map(({ emoji, text }) => (
-              <div key={text} style={{ display: 'flex', gap: 8, fontSize: '0.85rem', color: 'var(--text-2)' }}>
-                <span style={{ color: 'var(--success)', fontWeight: 700 }}>{emoji}</span>
-                <span>{text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <PageHeader kicker="Matches" title="Recommended for you" subtitle="Matched against your education, income, category and location." />
+        <EmptyState
+          icon={<User size={24} />}
+          title="Your matches are waiting"
+          body="Complete your student profile and GovAI will check every scheme in the catalog against it — education, income, category and location all count."
+          action={<button className="btn btn-primary" onClick={() => onNavigate('profile')}>Complete my profile <ChevronRight size={16} /></button>}
+        />
       </div>
     );
   }
 
   return (
-    <div>
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <h1 className="page-title">Recommended for You</h1>
-            <p className="page-subtitle">Matched against your education, income, category and location</p>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', cursor: 'pointer', fontWeight: 600, color: 'var(--text-2)' }}>
+    <div className="recs">
+      <PageHeader
+        kicker="Matches"
+        title="Recommended for you"
+        subtitle="Every scheme in the catalog, checked against your profile."
+        actions={
+          <>
+            <label className="ui-switch">
               <input type="checkbox" checked={includeAi} onChange={(e) => setIncludeAi(e.target.checked)} />
-              AI Explanations
+              <span aria-hidden="true" /> AI explanations
             </label>
-            <button className="btn btn-secondary btn-sm" onClick={fetchRecs} title="Refresh evaluation">
-              <RefreshCw size={14} /> Re-evaluate
+            <button className="btn btn-secondary btn-sm" onClick={() => refresh({ explain: includeAi })} disabled={loading}>
+              <RefreshCw size={14} className={loading ? 'spin' : ''} /> Re-evaluate
             </button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      {/* Summary stats */}
-      {!loading && (
-        <div className="stat-grid" style={{ marginBottom: 20 }}>
-          <div className="stat-card" style={{ padding: 16 }}>
-            <div className="stat-value" style={{ color: 'var(--success)', fontSize: '1.6rem' }}>{counts.eligible}</div>
-            <div className="stat-label">Eligible</div>
-          </div>
-          <div className="stat-card" style={{ padding: 16 }}>
-            <div className="stat-value" style={{ color: 'var(--blue)', fontSize: '1.6rem' }}>{counts.needs}</div>
-            <div className="stat-label">Need Verification</div>
-          </div>
-          <div className="stat-card" style={{ padding: 16 }}>
-            <div className="stat-value" style={{ color: 'var(--danger)', fontSize: '1.6rem' }}>{counts.not}</div>
-            <div className="stat-label">Not Eligible</div>
-          </div>
-          <div className="stat-card" style={{ padding: 16 }}>
-            <div className="stat-value" style={{ fontSize: '1.6rem' }}>{counts.all}</div>
-            <div className="stat-label">Total evaluated</div>
-          </div>
-        </div>
-      )}
-
-      {/* Status filter pills */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
-        {[
-          { val: '', label: `All (${counts.all})` },
-          { val: 'ELIGIBLE', label: `Eligible (${counts.eligible})` },
-          { val: 'NEEDS_VERIFICATION', label: `Needs Verification (${counts.needs})` },
-          { val: 'NOT_ELIGIBLE', label: `Not Eligible (${counts.not})` },
-        ].map(({ val, label }) => (
-          <button
-            key={val}
-            className={`btn btn-sm ${statusFilter === val ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setStatusFilter(val)}
-          >
-            {label}
+      <div className="rec-tabs" role="tablist" aria-label="Filter by eligibility">
+        {TABS.map((t) => (
+          <button key={t.val} role="tab" aria-selected={statusFilter === t.val} className={`rec-tab ${statusFilter === t.val ? 'on' : ''}`} onClick={() => setStatusFilter(t.val)}>
+            <b>{loading && allRecs.length === 0 ? '–' : tabCount(t.val)}</b>
+            <span>{t.label}</span>
           </button>
         ))}
       </div>
 
-      {/* Cards */}
-      {loading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {[1,2,3].map((i) => <SchemeCardSkeleton key={i} />)}
-        </div>
-      ) : recs.length === 0 ? (
-        <div className="card">
-          <div className="empty-state">
-            <div className="empty-state-title">No schemes in this category</div>
-            <p className="empty-state-body">Try a different filter or re-evaluate with AI explanations enabled.</p>
-          </div>
-        </div>
+      {error && !loading ? (
+        <ErrorState title="Couldn’t load your matches" message={error} onRetry={() => refresh({ explain: includeAi })} />
+      ) : loading && allRecs.length === 0 ? (
+        <div className="rec-list">{[1, 2, 3].map((i) => <SchemeCardSkeleton key={i} />)}</div>
+      ) : visible.length === 0 ? (
+        <EmptyState icon={<Inbox size={24} />} title="Nothing in this group" body="No schemes have this eligibility status for your profile." action={<button className="btn btn-secondary" onClick={() => setStatusFilter('')}>Show all</button>} />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {recs.map((rec) => {
-            const { scheme, matchScore, eligibilityStatus, rulesEvaluated, aiExplanation } = rec;
-            const isExpanded = !!expandedIds[scheme.id];
-            const borderColor = eligibilityStatus === 'ELIGIBLE' ? 'var(--success)'
-              : eligibilityStatus === 'NEEDS_VERIFICATION' ? 'var(--blue)'
-              : 'var(--danger)';
-
-            return (
-              <div key={scheme.id} className="card" style={{ borderLeft: `3px solid ${borderColor}`, padding: '20px 22px' }}>
-                {/* Header row */}
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-                      <SchemeStatusBadge status={eligibilityStatus} />
-                      <VerificationBadge status={scheme.verificationStatus} />
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-4)', fontWeight: 500, display: 'flex', alignItems: 'center' }}>
-                        {scheme.centralOrState}{scheme.state ? ` · ${scheme.state}` : ''}
-                      </span>
-                    </div>
-                    <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text-1)', marginBottom: 3 }}>{scheme.name}</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-3)' }}>{scheme.department}</div>
-                  </div>
-
-                  {/* Match score */}
-                  <div className="match-score">
-                    <span className="match-score-value" style={{
-                      color: matchScore >= 80 ? 'var(--success)' : matchScore >= 50 ? 'var(--warning)' : 'var(--danger)'
-                    }}>
-                      {matchScore}<span style={{ fontSize: '0.8rem', color: 'var(--text-4)', fontWeight: 500 }}>%</span>
-                    </span>
-                    <span className="match-score-label">
-                      {matchScore >= 80 ? 'Strong match' : matchScore >= 50 ? 'Partial match' : 'Weak match'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Description */}
-                <p style={{ fontSize: '0.875rem', color: 'var(--text-2)', marginBottom: 10, lineHeight: 1.5 }}>
-                  {scheme.shortDescription}
-                </p>
-
-                {/* Deadline */}
-                <div style={{ marginBottom: 10 }}>
-                  <DeadlineBadge deadline={scheme.deadline} />
-                </div>
-
-                {/* Stale warning */}
-                {scheme.verificationStatus === 'STALE' && (
-                  <div className="stale-banner" style={{ marginBottom: 10 }}>
-                    <span style={{ flexShrink: 0 }}>⚠</span>
-                    <span>Scheme data may be outdated. Verify eligibility on the official government portal before applying.</span>
-                  </div>
-                )}
-
-                {/* AI explanation */}
-                {aiExplanation && (
-                  <div className="ai-card" style={{ marginBottom: 10 }}>
-                    <div className="ai-card-label"><Sparkles size={13} /> AI Advisor note</div>
-                    <p className="ai-card-text">{aiExplanation}</p>
-                  </div>
-                )}
-
-                {/* Rule tree accordion */}
-                {rulesEvaluated && rulesEvaluated.length > 0 && (
-                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 10 }}>
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      style={{ width: '100%', justifyContent: 'space-between', fontSize: '0.8rem' }}
-                      onClick={() => toggleExpanded(scheme.id)}
-                      aria-expanded={isExpanded}
-                    >
-                      <span>
-                        Eligibility breakdown —{' '}
-                        <strong style={{ color: 'var(--success)' }}>{rulesEvaluated.filter((r) => r.passed).length} passed</strong>
-                        {' '}/ {rulesEvaluated.length} rules
-                      </span>
-                      {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                    </button>
-
-                    {isExpanded && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
-                        {rulesEvaluated.map((rule, idx) => (
-                          <div key={idx} className={`rule-row ${rule.passed ? 'rule-row-pass' : 'rule-row-fail'}`}>
-                            {rule.passed ? <CheckCircle size={14} style={{ flexShrink: 0 }} color="var(--success)" /> : <XCircle size={14} style={{ flexShrink: 0 }} color="var(--danger)" />}
-                            <span className="rule-field">{rule.field}:</span>
-                            <span style={{ fontSize: '0.82rem', color: rule.passed ? 'var(--success)' : 'var(--danger)' }}>{rule.message}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Footer actions */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-                  <button className="btn btn-primary btn-sm" onClick={() => onSelectScheme(scheme)}>
-                    View Full Details
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+        <div className="rec-list" style={{ opacity: loading ? .6 : 1 }}>
+          {visible.map((rec) => <RecCard key={rec.scheme.id} rec={rec} onOpen={onSelectScheme} />)}
         </div>
       )}
     </div>
