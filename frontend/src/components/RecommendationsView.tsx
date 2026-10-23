@@ -110,8 +110,13 @@ export const RecommendationsView: React.FC<Props> = ({ onSelectScheme, onNavigat
   const [statusFilter, setStatusFilter] = useState('');
   const [includeAi, setIncludeAi] = useState(false);
 
-  // Statistics come from the complete result; only the visible list is filtered.
-  useEffect(() => { if (includeAi && !explained) refresh({ explain: true }); }, [includeAi, explained, refresh]);
+  // Controlled, event-driven toggle: only trigger refresh when user actively turns AI on
+  const handleToggleAi = (checked: boolean) => {
+    setIncludeAi(checked);
+    if (checked && !explained && !loading) {
+      refresh({ explain: true });
+    }
+  };
 
   const tabCount = (val: string) =>
     val === '' ? counts.all : val === 'ELIGIBLE' ? counts.eligible : val === 'NEEDS_VERIFICATION' ? counts.needs : counts.notEligible;
@@ -140,7 +145,7 @@ export const RecommendationsView: React.FC<Props> = ({ onSelectScheme, onNavigat
         actions={
           <>
             <label className="ui-switch">
-              <input type="checkbox" checked={includeAi} onChange={(e) => setIncludeAi(e.target.checked)} />
+              <input type="checkbox" checked={includeAi} onChange={(e) => handleToggleAi(e.target.checked)} />
               <span aria-hidden="true" /> AI explanations
             </label>
             <button className="btn btn-secondary btn-sm" onClick={() => refresh({ explain: includeAi })} disabled={loading}>

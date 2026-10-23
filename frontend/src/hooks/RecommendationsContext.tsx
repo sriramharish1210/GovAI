@@ -46,19 +46,27 @@ export const RecommendationsProvider: React.FC<{ enabled: boolean; children: Rea
     const explain = !!opts?.explain;
     setLoading(true);
     setError(null);
-    const res = await api.getRecommendations(explain);
-    if (id !== requestId.current) return; // a newer request superseded this one
-    if (res.success && res.data) {
-      const sorted = [...(res.data.recommendations ?? [])].sort(
-        (a, b) => STATUS_ORDER.indexOf(a.eligibilityStatus) - STATUS_ORDER.indexOf(b.eligibilityStatus)
-      );
-      setRecs(sorted);
-      setHasProfile(res.data.hasProfile);
-      setExplained(explain);
-    } else {
-      setError(errorMessage(res.error ? new Error(res.error.message) : null, 'Could not load your recommendations.'));
+    try {
+      const res = await api.getRecommendations(explain);
+      if (id !== requestId.current) return; // a newer request superseded this one
+      if (res.success && res.data) {
+        const sorted = [...(res.data.recommendations ?? [])].sort(
+          (a, b) => STATUS_ORDER.indexOf(a.eligibilityStatus) - STATUS_ORDER.indexOf(b.eligibilityStatus)
+        );
+        setRecs(sorted);
+        setHasProfile(res.data.hasProfile);
+        setExplained(explain);
+      } else {
+        setError(errorMessage(res.error ? new Error(res.error.message) : null, 'Could not load your recommendations.'));
+      }
+    } catch (err: any) {
+      if (id !== requestId.current) return;
+      setError(errorMessage(err, 'Could not load your recommendations.'));
+    } finally {
+      if (id === requestId.current) {
+        setLoading(false);
+      }
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {

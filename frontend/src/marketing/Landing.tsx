@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ArrowUpRight, Menu, X, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
+import { ArrowRight, Menu, X, CheckCircle2, AlertCircle, XCircle, Info } from 'lucide-react';
 import { BrandMark } from '../components/shared/Screens';
 import './marketing.css';
+import './doodles.css'; // decorative line art. Remove this import (or the mk-doodles class below) to disable it.
 
 const NAV = [
   { href: '#features', label: 'Features' },
@@ -64,7 +65,7 @@ const ProductPreview: React.FC = () => (
       <div className="mk-frame-body">
         <div className="mk-frame-side" aria-hidden="true">
           <span className="mk-frame-brand">GovAI</span>
-          {['Dashboard', 'Discover', 'My matches', 'Compare', 'Advisor', 'Saved'].map((l, i) => (
+          {['Dashboard', 'Discover', 'For You', 'Compare', 'AI Advisor', 'Saved Schemes'].map((l, i) => (
             <span key={l} className={i === 2 ? 'on' : ''}>{l}</span>
           ))}
         </div>
@@ -93,13 +94,14 @@ const ProductPreview: React.FC = () => (
         </div>
       </div>
     </div>
-    <figcaption>Product preview · illustrative sample data, not live results</figcaption>
+    <figcaption className="mk-cap"><span><Info size={13} aria-hidden="true" /> Product preview <i>·</i> illustrative sample data, not live results</span></figcaption>
   </figure>
 );
 
 export const Landing: React.FC<{ isAuthed: boolean }> = ({ isAuthed }) => {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [active, setActive] = useState('');
   useReveal();
 
   useEffect(() => {
@@ -107,21 +109,31 @@ export const Landing: React.FC<{ isAuthed: boolean }> = ({ isAuthed }) => {
     const onScroll = () => setScrolled(window.scrollY > 8);
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    // Highlight the nav link of the section currently in view
+    const ids = NAV.map((n) => n.href.slice(1));
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => { if (e.isIntersecting) setActive(e.target.id); });
+    }, { rootMargin: '-45% 0px -50% 0px' });
+    ids.forEach((id) => { const el = document.getElementById(id); if (el) io.observe(el); });
+    const onTop = () => { if (window.scrollY < 200) setActive(''); };
+    window.addEventListener('scroll', onTop, { passive: true });
+    return () => { window.removeEventListener('scroll', onScroll); window.removeEventListener('scroll', onTop); io.disconnect(); };
   }, []);
 
-  const cta = isAuthed ? 'Open dashboard' : 'Get started';
+  // Signed-out visitors always go through the sign-in page; nothing here authenticates anyone.
+  const dashHref = isAuthed ? '/app' : '/signin';
 
   return (
-    <div className="mk">
+    <div className="mk mk-doodles">
       <header className={`mk-nav ${scrolled || open ? 'is-solid' : ''}`}>
         <div className="mk-wrap mk-nav-row">
           <Link to="/" aria-label="GovAI home"><BrandMark /></Link>
           <nav className={`mk-nav-links ${open ? 'open' : ''}`} aria-label="Primary">
-            {NAV.map((n) => <a key={n.href} href={n.href} onClick={() => setOpen(false)}>{n.label}</a>)}
-            <Link className="mk-nav-signin" to="/signin" onClick={() => setOpen(false)}>Sign in</Link>
+            {NAV.map((n) => (
+              <a key={n.href} href={n.href} className={active === n.href.slice(1) ? 'is-active' : ''} aria-current={active === n.href.slice(1) ? 'true' : undefined} onClick={() => setOpen(false)}>{n.label}</a>
+            ))}
           </nav>
-          <Link className="mk-btn mk-btn-dark mk-nav-cta" to="/app">{cta}</Link>
+          <Link className="mk-btn mk-btn-dark mk-nav-cta" to={dashHref}>{isAuthed ? 'Open dashboard' : 'Get Started'}</Link>
           <button className="mk-burger" aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
             {open ? <X size={22} /> : <Menu size={22} />}
           </button>
@@ -139,8 +151,7 @@ export const Landing: React.FC<{ isAuthed: boolean }> = ({ isAuthed }) => {
               GovAI checks scholarships, education loans and other student schemes against your profile — and shows which rules you meet, which still need verifying, and where to apply.
             </p>
             <div className="mk-cta-row">
-              <Link className="mk-btn mk-btn-lime" to="/app">{cta} <ArrowRight size={17} /></Link>
-              <a className="mk-btn mk-btn-ghost" href="#how">See how it works</a>
+              <Link className="mk-btn mk-btn-lime" to={dashHref}>Open dashboard <ArrowRight size={17} /></Link>
             </div>
             <p className="mk-fine">Every scheme links back to its official source.</p>
           </div>
@@ -199,15 +210,6 @@ export const Landing: React.FC<{ isAuthed: boolean }> = ({ isAuthed }) => {
           </div>
         </section>
 
-        <section className="mk-final">
-          <div className="mk-wrap reveal">
-            <h2 className="mk-h2">Build your profile once. See your matches straight away.</h2>
-            <div className="mk-cta-row mk-cta-center">
-              <Link className="mk-btn mk-btn-dark" to="/app">{cta} <ArrowRight size={17} /></Link>
-              {!isAuthed && <Link className="mk-btn mk-btn-outline" to="/signin">Sign in</Link>}
-            </div>
-          </div>
-        </section>
       </main>
 
       <footer className="mk-footer">
@@ -221,15 +223,9 @@ export const Landing: React.FC<{ isAuthed: boolean }> = ({ isAuthed }) => {
             {NAV.map((n) => <a key={n.href} href={n.href}>{n.label}</a>)}
           </div>
           <div>
-            <h4>App</h4>
-            <Link to="/app/discover">Discover schemes</Link>
-            <Link to="/app/matches">My matches</Link>
-            <Link to="/app/assistant">AI advisor</Link>
-          </div>
-          <div>
             <h4>Account</h4>
-            <Link to="/signin">Sign in</Link>
-            <Link to="/app">{isAuthed ? 'Dashboard' : 'Get started'} <ArrowUpRight size={13} /></Link>
+            {!isAuthed && <Link to="/signin">Sign in</Link>}
+            <Link to={dashHref}>Open dashboard</Link>
           </div>
         </div>
         <div className="mk-wrap mk-footer-base">

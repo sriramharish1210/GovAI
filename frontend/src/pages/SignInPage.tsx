@@ -33,7 +33,7 @@ export const SignInPage: React.FC<Props> = ({ isAuthed, onMockLogin, onGoogleCre
     <div className="signin">
       <div className="signin-panel">
         <Link to="/" aria-label="GovAI home"><BrandMark /></Link>
-        <h1 className="display-md">Welcome back.</h1>
+        <h1 className="display-md">Welcome back</h1>
         <p className="signin-lead">Sign in to see the schemes matched to your profile, your saved schemes and your applications.</p>
 
         {GOOGLE_CLIENT_ID && (
@@ -42,12 +42,11 @@ export const SignInPage: React.FC<Props> = ({ isAuthed, onMockLogin, onGoogleCre
 
         {DEV_LOGIN && (
           <form className="signin-dev" onSubmit={(e) => { e.preventDefault(); run(() => onMockLogin(username.trim() || 'student_demo_1')); }}>
-            <label className="form-label" htmlFor="dev-user">Development sign-in</label>
+            <label className="form-label" htmlFor="dev-user">Username</label>
             <input id="dev-user" className="form-input" value={username} onChange={(e) => setUsername(e.target.value)} disabled={busy} />
             <button className="btn btn-primary" type="submit" disabled={busy}>
               {busy ? 'Signing in…' : <>Continue <ArrowRight size={16} /></>}
             </button>
-            <span className="form-hint">Only visible in local development builds.</span>
           </form>
         )}
 
@@ -59,10 +58,6 @@ export const SignInPage: React.FC<Props> = ({ isAuthed, onMockLogin, onGoogleCre
 
         <p className="signin-note"><ShieldCheck size={14} /> We only use your account to save your profile and applications.</p>
       </div>
-      <aside className="signin-aside" aria-hidden="true">
-        <p className="display-md">Know where you stand before you apply.</p>
-        <p>Every scheme shows which eligibility rules were checked, and links back to its official source.</p>
-      </aside>
     </div>
   );
 };

@@ -1,5 +1,6 @@
 import React from 'react';
-import { BookOpen } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { BookOpen, Home } from 'lucide-react';
 
 interface MobileTopbarProps {
   title: string;
@@ -13,6 +14,9 @@ export const MobileTopbar: React.FC<MobileTopbarProps> = ({ title, currentUser, 
     <div className="mobile-topbar">
       <div className="mobile-topbar-brand">GovAI</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Link to="/" className="btn btn-ghost btn-icon-sm" title="Home" aria-label="Back to home page" style={{ color: 'rgba(255,255,255,0.7)' }}>
+          <Home size={18} />
+        </Link>
         <button
           className="btn btn-ghost btn-icon-sm"
           onClick={onJargonClick}

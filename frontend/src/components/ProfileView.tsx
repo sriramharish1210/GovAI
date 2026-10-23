@@ -73,6 +73,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
   });
 
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [accountEmail, setAccountEmail] = useState('');
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const snapshot = React.useRef<string | null>(null);
 
   useEffect(() => { loadProfile(); }, []);
 
@@ -105,6 +109,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
             minorityStatus: !!p.minorityStatus,
           });
         }
+        setAccountEmail(res.data.email ?? '');
         if (res.data.notificationPreference) setPrefs(res.data.notificationPreference);
       } else {
         setLoadError(res.error?.message ?? 'Could not load your profile.');
@@ -150,10 +155,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
         api.updatePreferences(prefs),
       ]);
       if (res.success && prefRes.success) {
-        showToast('Profile saved successfully', 'success');
+        snapshot.current = JSON.stringify({ name, profile, prefs });
+        setDirty(false);
+        setSavedAt(new Date());
+        showToast('Profile and reminder preferences saved', 'success');
         onProfileUpdated();
-      } else {
+      } else if (!res.success) {
         showToast(res.error?.message ?? 'Failed to save profile', 'error');
+      } else {
+        showToast(prefRes.error?.message ?? 'Profile saved, but reminder preferences could not be saved', 'error');
       }
     } catch (e: any) {
       showToast(e.message ?? 'Error saving profile', 'error');
@@ -161,6 +171,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
       setSaving(false);
     }
   };
+
+  // Track unsaved changes against the last loaded/saved state
+  useEffect(() => {
+    if (loading || loadError) return;
+    const now = JSON.stringify({ name, profile, prefs });
+    if (snapshot.current === null) snapshot.current = now;
+    setDirty(now !== snapshot.current);
+  }, [loading, loadError, name, profile, prefs]);
 
   const upd = (key: keyof StudentProfile, val: any) => setProfile((p) => ({ ...p, [key]: val }));
   const completion = calcCompletion(name, profile);
@@ -177,7 +195,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
   // Never show an empty editable form after a failed load: saving it would overwrite real data with blanks.
   if (loadError) {
     return (
-      <div style={{ maxWidth: 840 }}>
+      <div>
         <PageHeader kicker="Profile" title="Your profile" />
         <ErrorState title="Couldn’t load your profile" message={loadError} onRetry={loadProfile} />
       </div>
@@ -185,7 +203,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
   }
 
   return (
-    <div style={{ maxWidth: 840 }}>
+    <div className="prof">
       <PageHeader kicker="Profile" title="Your profile" subtitle="Your details are used to check every scheme for eligibility. The more complete they are, the more accurate your results." />
 
       {/* ── Primary Identity Card ── */}
@@ -244,10 +262,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
         </div>
       </div>
 
-      <form onSubmit={handleSave}>
+      <form onSubmit={handleSave} className="prof-form">
 
         {/* ── Personal Identity (Name is Primary) ── */}
-        <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card prof-wide" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 18 }}>
             <div style={{ width: 28, height: 28, background: 'var(--blue-light)', borderRadius: 'var(--r-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <User size={15} color="var(--blue)" />
@@ -544,12 +562,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
         </div>
 
         {/* ── Notifications ── */}
-        <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card prof-wide" style={{ marginBottom: 20 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 18 }}>
             <div style={{ width: 28, height: 28, background: '#fce8e6', borderRadius: 'var(--r-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Bell size={15} color="var(--danger)" />
             </div>
-            <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Deadline Reminders</span>
+            <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>Reminder preferences</span>
+          </div>
+
+          <div className="notif-methods" role="group" aria-label="Reminder delivery method">
+            <div className="notif-method on">
+              <span className="notif-method-head"><Bell size={14} /> Email <em>Selected</em></span>
+              <label className="form-label" htmlFor="notif-email">Reminders are sent to</label>
+              <input id="notif-email" className="form-input" type="email" value={accountEmail} readOnly aria-describedby="notif-email-hint" />
+              <span id="notif-email-hint" className="form-hint">This is your account email. A separate notification address can’t be saved yet.</span>
+            </div>
+            <div className="notif-method off" aria-disabled="true">
+              <span className="notif-method-head">SMS <em>Not available yet</em></span>
+              <span className="form-hint">Text-message reminders aren’t supported by the current service, so they can’t be turned on.</span>
+            </div>
           </div>
 
           <div className="toggle-row">
@@ -586,10 +617,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onProfileUpdated }) =>
         </div>
 
         {/* Save button & summary */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+        <div className="prof-save">
           <div style={{ fontSize: '0.82rem', color: 'var(--text-3)', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Sparkles size={14} color="var(--blue)" />
-            <span>Profile updates immediately refresh personalized scheme recommendations</span>
+            <span>
+              {dirty ? <b style={{ color: 'var(--warning)' }}>Unsaved changes</b>
+                : savedAt ? <b style={{ color: 'var(--success)' }}>All changes saved at {savedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</b>
+                : 'No unsaved changes'}
+              {' · '}Saving refreshes your personalized recommendations
+            </span>
           </div>
           <button type="submit" className="btn btn-primary" disabled={saving} style={{ minWidth: 160 }}>
             {saving ? (

@@ -1,8 +1,8 @@
+import { Link } from 'react-router-dom';
 import React from 'react';
 import {
   LayoutDashboard, Compass, Sparkles, GitCompare, MessageSquare,
-  Bookmark, CheckSquare, Bell, User, LogOut, FileDown, HelpCircle,
-} from 'lucide-react';
+  Bookmark, CheckSquare, Bell, User, LogOut, FileDown, HelpCircle, Home } from 'lucide-react';
 
 interface SidebarProps {
   activePage: string;
@@ -88,6 +88,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Bottom */}
       <div className="sidebar-bottom">
+        <Link to="/" className="sidebar-link" title="Back to the GovAI home page">
+          <Home size={16} />
+          <span>Home</span>
+        </Link>
         {currentUser ? (
           <>
             {/* Download report */}

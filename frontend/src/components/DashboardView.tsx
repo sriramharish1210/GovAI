@@ -4,7 +4,7 @@ import { useRecommendations } from '../hooks/RecommendationsContext';
 import { BookmarkContext } from '../App';
 import type { Application, Reminder, Scheme } from '../../../shared/types';
 import {
-  Sparkles, Compass, MessageSquare, GitCompare, FileDown, User, ChevronRight,
+  Sparkles, Compass, FileDown, User, ChevronRight,
   Bell, Bookmark, CheckCircle2, AlertCircle, XCircle, CalendarClock,
 } from 'lucide-react';
 import { SchemeStatusBadge } from './shared/SchemeStatusBadge';
@@ -91,46 +91,45 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
         </div>
       )}
 
-      <section className="dash-hero">
-        <div className="dash-hero-copy">
-          <p className="ui-kicker ui-kicker-light">{greeting()}</p>
-          <h1>{firstName}, {hasProfile
-            ? counts.eligible > 0 ? <>you’re eligible for <em>{counts.eligible}</em> scheme{counts.eligible !== 1 ? 's' : ''}.</> : <>let’s find your next scheme.</>
-            : <>let’s set up your profile.</>}
-          </h1>
-          <p>{hasProfile
-            ? `${counts.needs} more need${counts.needs === 1 ? 's' : ''} verification. ${counts.notEligible} did not match your profile.`
-            : 'Add your education, income, category and state so GovAI can check every scheme against you.'}</p>
-          <div className="dash-hero-cta">
-            {hasProfile
-              ? <button className="btn dash-btn-lime" onClick={() => onNavigate('recommendations')}><Sparkles size={16} /> See my matches</button>
-              : <button className="btn dash-btn-lime" onClick={() => onNavigate('profile')}><User size={16} /> Complete profile</button>}
-            <button className="btn dash-btn-ghost" onClick={onGenerateReport} disabled={reportLoading || !hasProfile} title={hasProfile ? 'Download PDF eligibility report' : 'Complete your profile first'}>
-              <FileDown size={16} /> {reportLoading ? 'Preparing…' : 'Eligibility report'}
-            </button>
-          </div>
+      <header className="dash-head">
+        <div>
+          <p className="ui-kicker">{greeting()}</p>
+          <h1 className="ui-h1">{firstName}, here’s your overview</h1>
+          <p className="ui-sub">{hasProfile
+            ? counts.eligible > 0
+              ? `You’re eligible for ${counts.eligible} scheme${counts.eligible !== 1 ? 's' : ''}; ${counts.needs} more need verification.`
+              : `No confirmed matches yet; ${counts.needs} scheme${counts.needs !== 1 ? 's' : ''} need verification.`
+            : 'Add your details so GovAI can check every scheme against your profile.'}</p>
         </div>
+        <div className="ui-pagehead-actions">
+          {hasProfile ? (
+            <>
+              <button className="btn btn-primary" onClick={() => onNavigate('recommendations')}><Sparkles size={16} /> See my matches</button>
+              <button className="btn btn-secondary" onClick={onGenerateReport} disabled={reportLoading}><FileDown size={16} /> {reportLoading ? 'Preparing…' : 'Eligibility report'}</button>
+            </>
+          ) : (
+            <button className="btn btn-primary" onClick={() => onNavigate('profile')}><User size={16} /> Complete profile</button>
+          )}
+        </div>
+      </header>
 
-        {hasProfile && (
-          <div className="dash-overview" aria-label="Eligibility overview">
-            <div className="dash-overview-total"><b>{counts.all}</b><span>schemes evaluated for your profile</span></div>
-            <div className="dash-bar" role="img" aria-label={`${counts.eligible} eligible, ${counts.needs} need verification, ${counts.notEligible} not eligible`}>
-              <i className="e" style={{ flex: counts.eligible / total }} />
-              <i className="n" style={{ flex: counts.needs / total }} />
-              <i className="x" style={{ flex: counts.notEligible / total }} />
-            </div>
-            <ul className="dash-legend">
-              <li><CheckCircle2 size={14} /> <b>{counts.eligible}</b> Eligible</li>
-              <li><AlertCircle size={14} /> <b>{counts.needs}</b> Needs verification</li>
-              <li><XCircle size={14} /> <b>{counts.notEligible}</b> Not eligible</li>
-            </ul>
+      {hasProfile && (
+        <section className="dash-stats" aria-label="Eligibility overview">
+          <div className="dash-stat dash-stat-e"><CheckCircle2 size={16} /><b>{counts.eligible}</b><span>Eligible</span></div>
+          <div className="dash-stat dash-stat-n"><AlertCircle size={16} /><b>{counts.needs}</b><span>Needs verification</span></div>
+          <div className="dash-stat dash-stat-x"><XCircle size={16} /><b>{counts.notEligible}</b><span>Not eligible</span></div>
+          <div className="dash-stat dash-stat-t"><b>{counts.all}</b><span>Schemes evaluated</span></div>
+          <div className="dash-bar" role="img" aria-label={`${counts.eligible} eligible, ${counts.needs} need verification, ${counts.notEligible} not eligible`}>
+            <i className="e" style={{ flex: counts.eligible / total }} />
+            <i className="n" style={{ flex: counts.needs / total }} />
+            <i className="x" style={{ flex: counts.notEligible / total }} />
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
       {pct < 100 && (
         <button className="dash-profile-nudge" onClick={() => onNavigate('profile')}>
-          <span>Your profile is {pct}% complete — a fuller profile gives more accurate results.</span>
+          <span>Your profile is {pct}% complete. A fuller profile gives more accurate results.</span>
           <span className="dash-progress"><i style={{ width: `${pct}%` }} /></span>
           <ChevronRight size={16} />
         </button>
@@ -140,7 +139,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
         <section>
           <SectionHead title="Top opportunities" action={hasProfile && <button className="ui-link-btn" onClick={() => onNavigate('recommendations')}>All matches <ChevronRight size={14} /></button>} />
           {!hasProfile ? (
-            <EmptyState icon={<User size={24} />} title="No matches yet" body="Your matches appear here once your profile is saved." action={<button className="btn btn-primary" onClick={() => onNavigate('profile')}>Complete profile</button>} />
+            <EmptyState icon={<User size={24} />} title="No matches yet" body="Your matches appear here once your profile is saved." />
           ) : top.length === 0 ? (
             <EmptyState icon={<Compass size={24} />} title="No eligible or pending schemes right now" body="Browse the full catalog to see what else is available." action={<button className="btn btn-primary" onClick={() => onNavigate('discover')}>Discover schemes</button>} />
           ) : (
@@ -148,14 +147,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
               {top.map((r) => (
                 <li key={r.scheme.id}>
                   <button className="dash-row" onClick={() => onSelectScheme(r.scheme)}>
-                    <span className="dash-row-main">
-                      <strong>{r.scheme.name}</strong>
-                      <span>{r.scheme.department}</span>
-                    </span>
-                    <span className="dash-row-side">
-                      <SchemeStatusBadge status={r.eligibilityStatus} />
-                      <DeadlineBadge deadline={r.scheme.deadline} compact />
-                    </span>
+                    <span className="dash-row-main"><strong>{r.scheme.name}</strong><span>{r.scheme.department}</span></span>
+                    <span className="dash-row-side"><SchemeStatusBadge status={r.eligibilityStatus} /><DeadlineBadge deadline={r.scheme.deadline} compact /></span>
                   </button>
                 </li>
               ))}
@@ -164,22 +157,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
         </section>
 
         <aside className="dash-side">
-          <section className="dash-panel">
-            <SectionHead title="Application progress" action={<button className="ui-link-btn" onClick={() => onNavigate('applications')}>Tracker <ChevronRight size={14} /></button>} />
-            {tracked === 0 ? (
-              <p className="dash-muted">You aren’t tracking any applications yet. Open a scheme and set its status to start.</p>
-            ) : (
-              <div className="dash-stages">
-                {stages.map((s) => (
-                  <div key={s.key}><b>{s.n}</b><span>{s.label}</span></div>
-                ))}
-              </div>
-            )}
-            <button className="dash-saved" onClick={() => onNavigate('saved')}>
-              <Bookmark size={15} /> <span>{bookmarkedIds.size} saved scheme{bookmarkedIds.size !== 1 ? 's' : ''}</span> <ChevronRight size={15} />
-            </button>
-          </section>
-
           <section className="dash-panel">
             <SectionHead title="Coming up" />
             {upcoming.length === 0 && nextReminders.length === 0 ? (
@@ -204,10 +181,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ currentUser, onNav
             )}
           </section>
 
-          <section className="dash-panel dash-actions">
-            <button onClick={() => onNavigate('chat')}><MessageSquare size={16} /> Ask the AI advisor</button>
-            <button onClick={() => onNavigate('compare')}><GitCompare size={16} /> Compare schemes</button>
-            <button onClick={() => onNavigate('discover')}><Compass size={16} /> Discover schemes</button>
+          <section className="dash-panel">
+            <SectionHead title="My activity" action={<button className="ui-link-btn" onClick={() => onNavigate('applications')}>Tracker <ChevronRight size={14} /></button>} />
+            {tracked === 0 ? (
+              <p className="dash-muted">You aren’t tracking any applications yet.</p>
+            ) : (
+              <div className="dash-stages">
+                {stages.map((s) => <div key={s.key}><b>{s.n}</b><span>{s.label}</span></div>)}
+              </div>
+            )}
+            <button className="dash-saved" onClick={() => onNavigate('saved')}>
+              <Bookmark size={15} /> <span>{bookmarkedIds.size} saved scheme{bookmarkedIds.size !== 1 ? 's' : ''}</span> <ChevronRight size={15} />
+            </button>
           </section>
         </aside>
       </div>
