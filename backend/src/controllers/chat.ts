@@ -93,6 +93,7 @@ export const getChatMessages = async (req: AuthenticatedRequest, res: Response, 
  * Send a message and generate AI chatbot reply
  */
 export const sendChatMessage = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const reqStart = Date.now();
   const userId = req.user?.id;
   const { sessionId } = req.params;
   const { message } = req.body;
@@ -100,7 +101,10 @@ export const sendChatMessage = async (req: AuthenticatedRequest, res: Response, 
   if (!userId) return next(new AppError('Unauthorized', 401, 'UNAUTHORIZED'));
 
   try {
-    // 1. Verify session ownership
+    logger.info(`[Stage] sendChatMessage received | session: ${sessionId}`);
+
+    // 1. Database operations
+    const tDb0 = Date.now();
     const session = await prisma.chatSession.findFirst({
       where: { id: sessionId, userId }
     });
@@ -114,15 +118,15 @@ export const sendChatMessage = async (req: AuthenticatedRequest, res: Response, 
       where: { userId }
     });
 
-    // 3. Fetch past messages in session to provide conversational memory (limit to last 10 for performance)
+    // 3. Fetch past messages in session (limit to last 6 for prompt token speed)
     const pastMessages = await prisma.chatMessage.findMany({
       where: { sessionId },
-      orderBy: { createdAt: 'asc' },
-      take: 10
+      orderBy: { createdAt: 'desc' },
+      take: 6
     });
 
-    // Format chat history
-    const history = pastMessages.map((m: any) => ({
+    // Format chat history in chronological order
+    const history = pastMessages.reverse().map((m: any) => ({
       role: m.role.toLowerCase() as 'user' | 'assistant',
       content: m.content
     }));
@@ -139,7 +143,7 @@ export const sendChatMessage = async (req: AuthenticatedRequest, res: Response, 
           const evalRes = evaluateSchemeEligibility(profile as any, s as any);
           return evalRes.eligibilityStatus !== 'NOT_ELIGIBLE';
         })
-        .slice(0, 5); // Feed top 5 eligible schemes as primary context
+        .slice(0, 3); // Feed top 3 eligible schemes as primary context
     }
 
     // 5. Save the user's message
@@ -150,49 +154,65 @@ export const sendChatMessage = async (req: AuthenticatedRequest, res: Response, 
         content: message
       }
     });
+    const dbDurationMs = Date.now() - tDb0;
 
-    // 6. Generate AI Response
-    // Use fallback profile context if no profile created yet
-    const profileContext = profile || {
-      state: 'Unknown',
-      dob: new Date('2000-01-01'),
-      educationLevel: 'Graduate',
-      familyIncome: 500000,
-      category: 'General',
-      gender: 'Prefer not to say',
-      disabilityStatus: false,
-      minorityStatus: false
-    };
+    try {
+      // 6. Generate AI Response
+      // Use fallback profile context if no profile created yet
+      const profileContext = profile || {
+        state: 'Unknown',
+        dob: new Date('2000-01-01'),
+        educationLevel: 'Graduate',
+        familyIncome: 500000,
+        category: 'General',
+        gender: 'Prefer not to say',
+        disabilityStatus: false,
+        minorityStatus: false
+      };
 
-    logger.info(`Invoking AI chatbot for session ${sessionId}...`);
-    const aiReplyText = await AIService.chatbot(
-      profileContext as any,
-      history,
-      message,
-      relevantSchemes as any[]
-    );
+      const tAi0 = Date.now();
+      logger.info(`[Stage] Invoking AI chatbot for session ${sessionId}...`);
+      const aiReplyText = await AIService.chatbot(
+        profileContext as any,
+        history,
+        message,
+        relevantSchemes as any[]
+      );
+      const aiDurationMs = Date.now() - tAi0;
 
-    // 7. Save the AI's reply
-    const assistantMsg = await prisma.chatMessage.create({
-      data: {
-        sessionId,
-        role: 'ASSISTANT',
-        content: aiReplyText
-      }
-    });
+      // 7. Save the AI's reply
+      const assistantMsg = await prisma.chatMessage.create({
+        data: {
+          sessionId,
+          role: 'ASSISTANT',
+          content: aiReplyText
+        }
+      });
 
-    // 8. Update session's updatedAt timestamp
-    await prisma.chatSession.update({
-      where: { id: sessionId },
-      data: { updatedAt: new Date() }
-    });
+      // 8. Update session's updatedAt timestamp
+      await prisma.chatSession.update({
+        where: { id: sessionId },
+        data: { updatedAt: new Date() }
+      });
 
-    res.status(200).json({
-      success: true,
-      data: assistantMsg,
-      error: null
-    });
+      const totalDurationMs = Date.now() - reqStart;
+      logger.info(`[Stage] sendChatMessage completed | session: ${sessionId} | db: ${dbDurationMs}ms | ai: ${aiDurationMs}ms | total: ${totalDurationMs}ms`);
+
+      res.status(200).json({
+        success: true,
+        data: assistantMsg,
+        error: null
+      });
+    } catch (aiErr) {
+      // Rollback userMsg so failed generation does not leave dangling unanswered user message
+      await prisma.chatMessage.delete({ where: { id: userMsg.id } }).catch((delErr) => {
+        logger.warn(`Failed to rollback user message ${userMsg.id}: ${delErr}`);
+      });
+      throw aiErr;
+    }
   } catch (error) {
+    const totalDurationMs = Date.now() - reqStart;
+    logger.error(`[Stage] sendChatMessage failed after ${totalDurationMs}ms:`, error);
     next(error);
   }
 };

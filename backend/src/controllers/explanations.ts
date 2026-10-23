@@ -2,11 +2,14 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../utils/db';
 import { AppError } from '../middlewares/error';
 import { AIService } from '../services/AIService';
+import { GlossaryService } from '../services/GlossaryService';
+import { logger } from '../utils/logger';
 
 /**
  * Explain a government administrative term
  */
 export const explainTerm = async (req: Request, res: Response, next: NextFunction) => {
+  const reqStart = Date.now();
   const { term, context } = req.body;
 
   if (!term) {
@@ -14,7 +17,11 @@ export const explainTerm = async (req: Request, res: Response, next: NextFunctio
   }
 
   try {
-    const explanation = await AIService.explainTerm(term, context);
+    logger.info(`[Stage] explainTerm received for "${term}"`);
+    const { explanation, source, durationMs } = await GlossaryService.getExplanation(term, context);
+    const totalMs = Date.now() - reqStart;
+    logger.info(`[Stage] explainTerm completed for "${term}" | source: ${source} | lookup/gen: ${durationMs}ms | total: ${totalMs}ms`);
+
     res.status(200).json({
       success: true,
       data: {
@@ -24,6 +31,8 @@ export const explainTerm = async (req: Request, res: Response, next: NextFunctio
       error: null
     });
   } catch (error) {
+    const totalMs = Date.now() - reqStart;
+    logger.error(`[Stage] explainTerm failed for "${term}" after ${totalMs}ms:`, error);
     next(error);
   }
 };

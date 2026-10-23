@@ -11,6 +11,7 @@ export const config = {
   authSecret: process.env.AUTH_SECRET || 'dev_secret_key_12345678',
   aiMode: (process.env.AI_MODE || 'mock') as 'gemini' | 'mock',
   geminiApiKey: process.env.GEMINI_API_KEY || '',
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
   emailProviderKey: process.env.EMAIL_PROVIDER_KEY || '',
@@ -25,4 +26,4 @@ if (config.aiMode === 'gemini' && !config.geminiApiKey) {
   throw new Error('CRITICAL CONFIGURATION ERROR: AI_MODE is set to "gemini" but GEMINI_API_KEY is not defined.');
 }
 
-console.log(`[Config] Loaded config. Port: ${config.port}. AI Mode: ${config.aiMode}.`);
+console.log(`[Config] Loaded config. Port: ${config.port}. AI Mode: ${config.aiMode}. Model: ${config.geminiModel}.`);

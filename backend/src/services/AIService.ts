@@ -6,6 +6,7 @@ import {
   EligibilityEvaluationResult 
 } from '../../../shared/types';
 import { logger } from '../utils/logger';
+import { AppError } from '../middlewares/error';
 
 // Initialize Gemini
 const genAI = config.aiMode === 'gemini' && config.geminiApiKey 
@@ -17,6 +18,84 @@ const genAI = config.aiMode === 'gemini' && config.geminiApiKey
  */
 export class AIService {
   
+  private static handleGeminiError(action: string, error: unknown): never {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const sanitized = errMsg.replace(/key=[^&\s]+/gi, 'key=REDACTED');
+    logger.error(`Gemini ${action} failed [model: ${config.geminiModel}]: ${sanitized}`);
+    throw new AppError(
+      'The AI Advisor is temporarily unavailable. Please try again in a moment.',
+      503,
+      'AI_SERVICE_UNAVAILABLE'
+    );
+  }
+
+  private static async withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    let timer: NodeJS.Timeout;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`${label} timed out after ${ms}ms`));
+      }, ms);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+  }
+
+  private static async executeGeminiPrompt(action: string, prompt: string): Promise<string> {
+    if (!genAI) {
+      throw new AppError('Gemini API key is not configured.', 500, 'AI_CONFIG_ERROR');
+    }
+
+    const tStart = Date.now();
+    const primaryTimeoutMs = 12000; // 12 seconds bounded timeout for primary model
+    logger.info(`[Stage] Gemini ${action} started [model: ${config.geminiModel}] | promptChars: ${prompt.length}`);
+
+    try {
+      const model = genAI.getGenerativeModel({ model: config.geminiModel });
+      const result = await this.withTimeout(
+        model.generateContent(prompt),
+        primaryTimeoutMs,
+        `Primary model [${config.geminiModel}]`
+      );
+      const durationMs = Date.now() - tStart;
+      logger.info(`[Stage] Gemini ${action} completed [model: ${config.geminiModel}] in ${durationMs}ms`);
+      return result.response.text().trim();
+    } catch (primaryError: any) {
+      const primaryDurationMs = Date.now() - tStart;
+      const errMsg = primaryError instanceof Error ? primaryError.message : String(primaryError);
+      const isRetryable = primaryError?.status === 503 ||
+        errMsg.includes('503') ||
+        errMsg.includes('timed out') ||
+        errMsg.includes('fetch failed') ||
+        errMsg.includes('high demand') ||
+        errMsg.includes('429');
+
+      // If primary model times out or hits high-demand spike and was not already gemini-3.5-flash, fallback immediately to gemini-3.5-flash
+      if (isRetryable && config.geminiModel !== 'gemini-3.5-flash') {
+        const sanitized = errMsg.replace(/key=[^&\s]+/gi, 'key=REDACTED');
+        logger.warn(`Primary Gemini model [${config.geminiModel}] failed after ${primaryDurationMs}ms (${sanitized}). Retrying with fallback model [gemini-3.5-flash] for ${action}...`);
+        
+        const fallbackStart = Date.now();
+        const fallbackTimeoutMs = 15000;
+        try {
+          const fallbackModel = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
+          const fallbackResult = await this.withTimeout(
+            fallbackModel.generateContent(prompt),
+            fallbackTimeoutMs,
+            'Fallback model [gemini-3.5-flash]'
+          );
+          const fallbackDurationMs = Date.now() - fallbackStart;
+          logger.info(`[Stage] Gemini ${action} fallback completed [model: gemini-3.5-flash] in ${fallbackDurationMs}ms (total: ${Date.now() - tStart}ms)`);
+          return fallbackResult.response.text().trim();
+        } catch (fallbackError) {
+          const totalDurationMs = Date.now() - tStart;
+          logger.error(`[Stage] Gemini ${action} fallback also failed after total ${totalDurationMs}ms`);
+          this.handleGeminiError(`${action} (fallback: gemini-3.5-flash)`, fallbackError);
+        }
+      }
+
+      this.handleGeminiError(action, primaryError);
+    }
+  }
+
   /**
    * Generates a student-friendly explanation of deterministic eligibility results
    */
@@ -25,93 +104,79 @@ export class AIService {
     scheme: Scheme,
     evaluation: EligibilityEvaluationResult
   ): Promise<string> {
-    if (config.aiMode === 'mock' || !genAI) {
+    if (config.aiMode === 'mock') {
       return this.getMockRecommendationExplanation(scheme, evaluation);
     }
 
-    try {
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-      const prompt = `
-        You are an expert student counselor for Government Schemes in India.
-        Based on the student's profile and a scheme's deterministic eligibility evaluation, write a friendly 3-4 sentence explanation.
-        
-        Student Profile:
-        ${JSON.stringify({
-          state: profile.state,
-          educationLevel: profile.educationLevel,
-          course: profile.course,
-          academicPercentage: profile.academicPercentage,
-          familyIncome: profile.familyIncome,
-          category: profile.category,
-          gender: profile.gender,
-          disabilityStatus: profile.disabilityStatus,
-          minorityStatus: profile.minorityStatus
-        }, null, 2)}
+    const prompt = `
+      You are an expert student counselor for Government Schemes in India.
+      Based on the student's profile and a scheme's deterministic eligibility evaluation, write a friendly 3-4 sentence explanation.
+      
+      Student Profile:
+      ${JSON.stringify({
+        state: profile.state,
+        educationLevel: profile.educationLevel,
+        course: profile.course,
+        academicPercentage: profile.academicPercentage,
+        familyIncome: profile.familyIncome,
+        category: profile.category,
+        gender: profile.gender,
+        disabilityStatus: profile.disabilityStatus,
+        minorityStatus: profile.minorityStatus
+      }, null, 2)}
 
-        Scheme Details:
-        - Name: ${scheme.name}
-        - Department: ${scheme.department}
-        - Verification Status: ${scheme.verificationStatus}
-        
-        Deterministic Rules Evaluation:
-        - Status: ${evaluation.eligibilityStatus}
-        - Match Score (Relevance): ${evaluation.matchScore}/100
-        - Details: ${JSON.stringify(evaluation.rulesEvaluated, null, 2)}
-        
-        Guidelines:
-        - Explain in simple, supportive terms why they qualify (or why not).
-        - If ELIGIBLE, highlight 2 key documents they should prepare.
-        - If LIKELY_ELIGIBLE or NEEDS_VERIFICATION, clearly point out what information or certificate needs double-checking.
-        - If NOT_ELIGIBLE, explain exactly which criteria failed (e.g., income ceiling or category mismatch) so they don't waste time, but keep a encouraging tone.
-        - If the scheme is STALE or UNVERIFIED, add a brief note warning them to check the official site.
-        - Be direct. Avoid jargon. Do not write a greeting or signature.
-      `;
+      Scheme Details:
+      - Name: ${scheme.name}
+      - Department: ${scheme.department}
+      - Verification Status: ${scheme.verificationStatus}
+      
+      Deterministic Rules Evaluation:
+      - Status: ${evaluation.eligibilityStatus}
+      - Match Score (Relevance): ${evaluation.matchScore}/100
+      - Details: ${JSON.stringify(evaluation.rulesEvaluated, null, 2)}
+      
+      Guidelines:
+      - Explain in simple, supportive terms why they qualify (or why not).
+      - If ELIGIBLE, highlight 2 key documents they should prepare.
+      - If LIKELY_ELIGIBLE or NEEDS_VERIFICATION, clearly point out what information or certificate needs double-checking.
+      - If NOT_ELIGIBLE, explain exactly which criteria failed (e.g., income ceiling or category mismatch) so they don't waste time, but keep a encouraging tone.
+      - If the scheme is STALE or UNVERIFIED, add a brief note warning them to check the official site.
+      - Be direct. Avoid jargon. Do not write a greeting or signature.
+    `;
 
-      const result = await model.generateContent(prompt);
-      return result.response.text().trim();
-    } catch (error) {
-      logger.error('Gemini recommendation explanation failed', error);
-      return this.getMockRecommendationExplanation(scheme, evaluation);
-    }
+    return this.executeGeminiPrompt('recommendation explanation', prompt);
   }
 
   /**
    * Generates a bulleted, easy-to-read summary of a government scheme
    */
   public static async summarizeScheme(scheme: Scheme): Promise<string> {
-    if (config.aiMode === 'mock' || !genAI) {
+    if (config.aiMode === 'mock') {
       return this.getMockSchemeSummary(scheme);
     }
 
-    try {
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-      const prompt = `
-        Summarize the following government scheme for a student in clean, readable Markdown.
-        
-        Scheme Name: ${scheme.name}
-        Description: ${scheme.detailedDescription}
-        Benefits: ${scheme.benefits ? JSON.stringify(scheme.benefits) : 'Not specified'}
-        Documents Required: ${scheme.documents ? JSON.stringify(scheme.documents) : 'Not specified'}
-        
-        Provide the following sections in your output:
-        - **What it is**: 1-2 sentence simple explanation of the scheme's purpose.
-        - **Key Benefit**: Bulleted list of what the student receives.
-        - **Critical Requirements**: Who is eligible (income caps, academic thresholds).
-        - **Required Files**: List of critical documents.
-        - **How to apply**: Step-by-step application instructions.
-        
-        Rules:
-        - Be extremely concise.
-        - Do not invent any facts. If something is missing from the input, write "Refer to official website."
-        - Keep it formatted with markdown bullet points.
-      `;
+    const prompt = `
+      Summarize the following government scheme for a student in clean, readable Markdown.
+      
+      Scheme Name: ${scheme.name}
+      Description: ${scheme.detailedDescription}
+      Benefits: ${scheme.benefits ? JSON.stringify(scheme.benefits) : 'Not specified'}
+      Documents Required: ${scheme.documents ? JSON.stringify(scheme.documents) : 'Not specified'}
+      
+      Provide the following sections in your output:
+      - **What it is**: 1-2 sentence simple explanation of the scheme's purpose.
+      - **Key Benefit**: Bulleted list of what the student receives.
+      - **Critical Requirements**: Who is eligible (income caps, academic thresholds).
+      - **Required Files**: List of critical documents.
+      - **How to apply**: Step-by-step application instructions.
+      
+      Rules:
+      - Be extremely concise.
+      - Do not invent any facts. If something is missing from the input, write "Refer to official website."
+      - Keep it formatted with markdown bullet points.
+    `;
 
-      const result = await model.generateContent(prompt);
-      return result.response.text().trim();
-    } catch (error) {
-      logger.error('Gemini scheme summarization failed', error);
-      return this.getMockSchemeSummary(scheme);
-    }
+    return this.executeGeminiPrompt('scheme summarization', prompt);
   }
 
   /**
@@ -123,87 +188,68 @@ export class AIService {
     userQuestion: string,
     schemesContext: Scheme[]
   ): Promise<string> {
-    if (config.aiMode === 'mock' || !genAI) {
+    if (config.aiMode === 'mock') {
       return this.getMockChatbotResponse(userQuestion, schemesContext);
     }
 
-    try {
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-      
-      const historyFormatted = chatHistory.map(h => 
-        `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}`
-      ).join('\n');
+    // Keep history bounded to the most recent 6 messages to save prompt tokens
+    const historyFormatted = chatHistory.slice(-6).map(h => 
+      `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}`
+    ).join('\n');
 
-      const prompt = `
-        You are GovAI, an expert AI chatbot specializing in Indian student government schemes.
-        You are helping a student. Below is their profile, along with schemes that they might be interested in.
-        
-        Student Profile:
-        ${JSON.stringify(profile, null, 2)}
-        
-        Relevant Schemes Context:
-        ${JSON.stringify(schemesContext.map(s => ({
-          id: s.id,
-          name: s.name,
-          department: s.department,
-          officialSourceUrl: s.officialSourceUrl,
-          verificationStatus: s.verificationStatus,
-          eligibility: s.eligibility
-        })), null, 2)}
-        
-        Conversation History:
-        ${historyFormatted}
-        
-        New Student Question:
-        "${userQuestion}"
-        
-        Instructions:
-        1. Ground your answers strictly on the student profile and the provided schemes context.
-        2. If you refer to any scheme that is "STALE" or "UNVERIFIED" in the context, you MUST start your response with a clear warning: "[WARNING: This scheme data has not been verified recently. Please consult the official website to verify current eligibility criteria.]"
-        3. If the user asks about eligibility, compare their profile details (e.g. income, marks) against the scheme requirements in the context and explain why they qualify or why they fail.
-        4. If the information requested is not in the context or if you cannot verify it, clearly state: "I cannot confirm this information with the available official source. Please double-check the official portal at [officialSourceUrl]." Do not make up deadlines or benefits.
-        5. Keep responses concise, friendly, and structured.
-      `;
+    // Keep context concise: top 3 schemes with essential fields only
+    const contextFormatted = schemesContext.slice(0, 3).map(s => {
+      const elig = s.eligibility as any;
+      const criteria = elig ? [
+        elig.incomeCeiling ? `Max Income: ₹${elig.incomeCeiling}` : null,
+        elig.coursesAllowed ? `Courses: ${elig.coursesAllowed}` : null,
+        elig.categoriesAllowed ? `Categories: ${elig.categoriesAllowed}` : null,
+      ].filter(Boolean).join(', ') : 'Refer to official portal';
+      return `- ${s.name} (${s.department}): Status=${s.verificationStatus}, Criteria=[${criteria}], URL=${s.officialSourceUrl}`;
+    }).join('\n');
 
-      const result = await model.generateContent(prompt);
-      return result.response.text().trim();
-    } catch (error) {
-      logger.error('Gemini chatbot query failed', error);
-      return this.getMockChatbotResponse(userQuestion, schemesContext);
-    }
+    const prompt = `You are GovAI, an expert AI chatbot specializing in Indian student government schemes.
+Student Profile: State=${profile.state}, Education=${profile.educationLevel}, Course=${profile.course || 'N/A'}, Family Income=₹${profile.familyIncome}, Category=${profile.category}, Gender=${profile.gender}, Disability=${profile.disabilityStatus}, Minority=${profile.minorityStatus}.
+
+Relevant Schemes Context:
+${contextFormatted || 'No specific schemes provided.'}
+
+Conversation History:
+${historyFormatted || 'None'}
+
+Student Question: "${userQuestion}"
+
+Instructions:
+1. Ground answers strictly on the student profile and schemes context.
+2. If referring to a "STALE" or "UNVERIFIED" scheme, begin with "[WARNING: This scheme data has not been verified recently. Please consult the official website to verify current eligibility criteria.]".
+3. If user asks about eligibility, compare profile details (income, course, category) against criteria.
+4. If information is missing, state: "I cannot confirm this information with the available official source. Please double-check the official portal."
+5. Keep responses concise, friendly, and structured.`;
+
+    return this.executeGeminiPrompt('chatbot query', prompt);
   }
 
   /**
    * Explains confusing legal or administrative terms simply
    */
   public static async explainTerm(term: string, context?: string): Promise<string> {
-    if (config.aiMode === 'mock' || !genAI) {
+    if (config.aiMode === 'mock') {
       return this.getMockTermExplanation(term);
     }
 
-    try {
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-      const prompt = `
-        Explain the government scheme administrative term "${term}" to a student.
-        Context where it appeared: ${context || 'None'}.
-        
-        Provide your explanation in three short, clear paragraphs:
-        1. **What it is**: Explain the term in 1-2 simple sentences that a 12th grader can easily understand.
-        2. **Why it is needed**: Explain why government schemes require this document or condition.
-        3. **How to get it**: Outline the general, practical procedure in India to obtain it (e.g. applying through local Tahsildar, CSC centers, or online state portals).
-        
-        Rules:
-        - Do not use dense legal language.
-        - If it is not a document (e.g. "Moratorium Period"), explain the concept simply.
-        - Do not invent state-specific procedures; state the general process.
-      `;
+    const prompt = `Explain the government scheme administrative term "${term}" to a student.
+Context: ${context || 'General Indian scholarship and government schemes'}.
 
-      const result = await model.generateContent(prompt);
-      return result.response.text().trim();
-    } catch (error) {
-      logger.error('Gemini term explanation failed', error);
-      return this.getMockTermExplanation(term);
-    }
+Provide your explanation in three short, clear paragraphs:
+1. **What it is**: 1-2 simple sentences a 12th grader can easily understand.
+2. **Why it is needed**: Why government schemes require this document or condition.
+3. **How to get it**: Practical steps in India to obtain it (Tahsildar, CSC center, or state online portal).
+
+Rules:
+- Simple language, no dense legal jargon.
+- Format with clean markdown headers.`;
+
+    return this.executeGeminiPrompt('term explanation', prompt);
   }
 
   // ==========================================
